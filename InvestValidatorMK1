@@ -1,0 +1,709 @@
+// INVEST User Story Validator for Azure DevOps
+// No AI integration no Gherkin
+// Scores each story against Independent, Negotiable, Valuable, Estimable, Small, Testable.
+
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
+
+// ─── Entry Point ──────────────────────────────────────────────────────────────
+// Everything executable lives here. Types and methods are below in Validator.
+
+// token may need to be regenerated
+const string token = "CLm1quEeBgJOJWNSRihAJI0b4vfEw1V01ieXMjyUiPCuXmgO5XI3JQQJ99CCACAAAAAAAAAAAAASAZDO1PXo";
+const string url   = "https://dev.azure.com/burlaka1140/aggy/_apis/wit/workitems/19?api-version=7.0";
+
+// fetch the work item from Azure DevOps
+using var http = new HttpClient();
+http.DefaultRequestHeaders.Authorization =
+    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+var singleItemJson = await http.GetStringAsync(url);
+
+// the single-item endpoint returns just { "id": ..., "fields": {...} }
+// we wrap it into the batch shape our parser expects so nothing else needs to change
+var wrappedJson = $"{{ \"count\": 1, \"value\": [{singleItemJson}] }}";
+
+var response    = Validator.ParseJson(wrappedJson);
+var batchReport = Validator.ValidateBatch(response);
+
+foreach (var report in batchReport.Reports)
+    Validator.PrintReport(report);
+
+Validator.PrintBatchSummary(batchReport);
+
+// write a .feature file for each story, plus one summary feature for the batch
+foreach (var report in batchReport.Reports)
+{
+    var featurePath = $"story_{report.WorkItemId}_invest.feature";
+    await File.WriteAllTextAsync(featurePath, Validator.BuildGherkin(report));
+    Console.WriteLine($"\n  Gherkin report saved → {featurePath}");
+}
+
+var batchFeaturePath = "invest_batch_summary.feature";
+await File.WriteAllTextAsync(batchFeaturePath, Validator.BuildBatchGherkin(batchReport));
+Console.WriteLine($"  Gherkin batch summary saved → {batchFeaturePath}\n");
+
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+// Just plain data structures — mapping what Azure DevOps sends back from their API.
+// The "System.*" and "Microsoft.VSTS.*" prefixes are ADO's naming convention, not ours.
+
+record AzureDevOpsResponse(
+    [property: JsonPropertyName("count")] int Count,
+    [property: JsonPropertyName("value")] List<WorkItem> Value);
+
+record WorkItem(
+    [property: JsonPropertyName("id")]     int Id,
+    [property: JsonPropertyName("rev")]    int Rev,
+    [property: JsonPropertyName("fields")] WorkItemFields Fields,
+    [property: JsonPropertyName("url")]    string Url);
+
+record WorkItemFields(
+    [property: JsonPropertyName("System.Id")]                                int Id,
+    [property: JsonPropertyName("System.Title")]                             string Title,
+    [property: JsonPropertyName("System.Description")]                       string? Description,
+    [property: JsonPropertyName("System.WorkItemType")]                      string WorkItemType,
+    [property: JsonPropertyName("System.State")]                             string State,
+    [property: JsonPropertyName("System.Tags")]                              string? Tags,
+    [property: JsonPropertyName("System.AreaPath")]                          string AreaPath,
+    [property: JsonPropertyName("System.TeamProject")]                       string TeamProject,
+    [property: JsonPropertyName("Microsoft.VSTS.Common.AcceptanceCriteria")] string? AcceptanceCriteria,
+    [property: JsonPropertyName("Microsoft.VSTS.Scheduling.StoryPoints")]    double? StoryPoints,
+    [property: JsonPropertyName("Microsoft.VSTS.Common.Priority")]           int? Priority,
+    [property: JsonPropertyName("System.Relations")]                         List<WorkItemRelation>? Relations)
+{
+    // ADO descriptions come back as HTML — strip the tags before analysing text
+    public string PlainDescription        => Validator.StripHtml(Description ?? "");
+    public string PlainAcceptanceCriteria => Validator.StripHtml(AcceptanceCriteria ?? "");
+}
+
+record WorkItemRelation(
+    [property: JsonPropertyName("rel")] string RelationType,
+    [property: JsonPropertyName("url")] string Url);
+
+// Scoring: Pass = 75+, Warning = 45-74, Fail = below 45
+enum InvestCriterion { Independent, Negotiable, Valuable, Estimable, Small, Testable }
+enum Severity        { Pass, Warning, Fail }
+
+record CriterionResult(
+    InvestCriterion Criterion,
+    Severity        Severity,
+    string          Summary,
+    List<string>    Issues,
+    List<string>    Suggestions,
+    int             Score)
+{
+    public bool Passed => Severity == Severity.Pass;
+}
+
+record InvestReport(
+    int                   WorkItemId,
+    string                Title,
+    string                WorkItemType,
+    List<CriterionResult> Results)
+{
+    public int      OverallScore    => Results.Count > 0 ? (int)Results.Average(r => r.Score) : 0;
+    public Severity OverallSeverity => Results.Any(r => r.Severity == Severity.Fail)    ? Severity.Fail
+                                     : Results.Any(r => r.Severity == Severity.Warning) ? Severity.Warning
+                                     : Severity.Pass;
+    public int PassCount    => Results.Count(r => r.Severity == Severity.Pass);
+    public int WarningCount => Results.Count(r => r.Severity == Severity.Warning);
+    public int FailCount    => Results.Count(r => r.Severity == Severity.Fail);
+
+    // Top things to fix — pull suggestions from the worst criteria first
+    public List<string> TopActions => Results
+        .Where(r => !r.Passed)
+        .OrderBy(r => r.Severity)
+        .SelectMany(r => r.Suggestions)
+        .Take(5)
+        .ToList();
+}
+
+record BatchReport(List<InvestReport> Reports)
+{
+    public int    Total        => Reports.Count;
+    public int    Passing      => Reports.Count(r => r.OverallSeverity == Severity.Pass);
+    public int    Warnings     => Reports.Count(r => r.OverallSeverity == Severity.Warning);
+    public int    Failing      => Reports.Count(r => r.OverallSeverity == Severity.Fail);
+    public double AverageScore => Reports.Count > 0 ? Reports.Average(r => r.OverallScore) : 0;
+
+    // Average score per criterion — useful for spotting team-wide patterns
+    public Dictionary<InvestCriterion, double> ScoreByCriterion =>
+        Enum.GetValues<InvestCriterion>().ToDictionary(
+            c => c,
+            c => Reports.SelectMany(r => r.Results)
+                        .Where(r => r.Criterion == c)
+                        .Select(r => (double)r.Score)
+                        .DefaultIfEmpty(0)
+                        .Average());
+
+    public InvestCriterion WeakestCriterion => ScoreByCriterion.OrderBy(kv => kv.Value).First().Key;
+}
+
+
+// ─── All logic lives in here ───────────────────────────────────────────────────
+// Wrapping everything in a static class keeps the compiler happy — it needs the
+// top-level executable code and type/method declarations to be clearly separated.
+
+static class Validator
+{
+
+// ─── JSON Parsing ─────────────────────────────────────────────────────────────
+
+    public static AzureDevOpsResponse ParseJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            throw new ArgumentException("JSON cannot be empty.");
+
+        // using the source generator context rather than reflection — works on all .NET versions
+        return JsonSerializer.Deserialize(json, InvestJsonContext.Default.AzureDevOpsResponse)
+            ?? throw new InvalidOperationException("Deserialisation returned null — check your JSON format.");
+    }
+
+
+// ─── Validation Orchestration ─────────────────────────────────────────────────
+
+    // Runs all six INVEST checks against a single work item and bundles the results
+    public static InvestReport Validate(WorkItem item)
+    {
+        var results = new List<CriterionResult>
+        {
+            CheckIndependent(item),
+            CheckNegotiable(item),
+            CheckValuable(item),
+            CheckEstimable(item),
+            CheckSmall(item),
+            CheckTestable(item)
+        };
+
+        return new InvestReport(item.Id, item.Fields.Title, item.Fields.WorkItemType, results);
+    }
+
+    // Only validates "User Story" type items — skips tasks, bugs, epics etc.
+    public static BatchReport ValidateBatch(AzureDevOpsResponse response)
+    {
+        var stories = response.Value
+            .Where(i => i.Fields.WorkItemType.Equals("User Story", StringComparison.OrdinalIgnoreCase)
+                     || i.Fields.WorkItemType.Equals("Story",      StringComparison.OrdinalIgnoreCase))
+            .Select(Validate)
+            .ToList();
+
+        return new BatchReport(stories);
+    }
+
+
+// ─── INVEST Validators ────────────────────────────────────────────────────────
+// Each method checks one criterion and returns a scored result.
+// Score starts at 100 and we deduct for problems we find.
+
+    // I — Independent
+    // We're looking for signs that this story can't be started without something else being done first
+    static CriterionResult CheckIndependent(WorkItem item)
+    {
+        var issues      = new List<string>();
+        var suggestions = new List<string>();
+        int score       = 100;
+
+        var text = $"{item.Fields.Title} {item.Fields.PlainDescription}".ToLowerInvariant();
+
+        // dependency phrases that crop up all the time in badly-written stories
+        string[] dependencyKeywords = ["depends on", "blocked by", "requires", "after #",
+                                       "needs story", "must complete first", "prerequisite",
+                                       "cannot start until", "wait for"];
+
+        var found = dependencyKeywords.Where(k => text.Contains(k)).ToList();
+        if (found.Count != 0)
+        {
+            issues.Add($"Dependency language found: '{string.Join("', '", found)}'.");
+            suggestions.Add("Remove coupling language, or split into independent deliverable slices.");
+            score -= 30 * Math.Min(found.Count, 2);
+        }
+
+        // if ADO has actual blocking relations set on the item, that's a hard signal
+        var blocking = item.Fields.Relations?
+            .Where(r => r.RelationType.Contains("Blocked",     StringComparison.OrdinalIgnoreCase)
+                     || r.RelationType.Contains("Predecessor", StringComparison.OrdinalIgnoreCase))
+            .ToList() ?? [];
+
+        if (blocking.Count > 0)
+        {
+            issues.Add($"Story has {blocking.Count} blocking/predecessor relation(s) in Azure DevOps.");
+            suggestions.Add("Redesign so each story delivers value independently, or combine them.");
+            score -= 20 * Math.Min(blocking.Count, 2);
+        }
+
+        // "Step 1", "Phase 2" in a title basically means "you can't ship this alone"
+        if (Regex.IsMatch(item.Fields.Title, @"\b(step|phase|part|stage)\s*\d+\b", RegexOptions.IgnoreCase))
+        {
+            issues.Add("Title implies sequential ordering — this story may depend on others.");
+            suggestions.Add("Rewrite so each story stands alone and can be demoed independently.");
+            score -= 20;
+        }
+
+        return BuildResult(InvestCriterion.Independent, issues, suggestions, score);
+    }
+
+    // N — Negotiable
+    // Stories shouldn't be a spec document. They're a placeholder for a conversation.
+    static CriterionResult CheckNegotiable(WorkItem item)
+    {
+        var issues      = new List<string>();
+        var suggestions = new List<string>();
+        int score       = 100;
+
+        var text = $"{item.Fields.Title} {item.Fields.PlainDescription}".ToLowerInvariant();
+
+        // these phrases turn a story into a rigid contract — team can't push back on the approach
+        string[] overSpec = ["must use", "must implement", "must be built with",
+                             "only use", "has to use", "specifically", "no other"];
+
+        var found = overSpec.Where(k => text.Contains(k)).ToList();
+        if (found.Count != 0)
+        {
+            issues.Add($"Over-specification found: '{string.Join("', '", found)}'.");
+            suggestions.Add("Focus on the what and why — let the team decide the how.");
+            score -= 25 * Math.Min(found.Count, 2);
+        }
+
+        // 300+ words is usually a sign someone turned a story into a requirements doc
+        int words = WordCount(item.Fields.PlainDescription);
+        if (words > 300)
+        {
+            issues.Add($"Description is {words} words — likely over-specified.");
+            suggestions.Add("Trim to the core need. Move implementation detail into tasks or team discussion.");
+            score -= 15;
+        }
+
+        return BuildResult(InvestCriterion.Negotiable, issues, suggestions, score);
+    }
+
+    // V — Valuable
+    // If you can't explain who benefits and why, the story probably shouldn't be in the backlog
+    static CriterionResult CheckValuable(WorkItem item)
+    {
+        var issues      = new List<string>();
+        var suggestions = new List<string>();
+        int score       = 100;
+
+        var text = $"{item.Fields.Title} {item.Fields.PlainDescription}".ToLowerInvariant();
+
+        // classic "As a..." pattern — tells us who the story is for
+        if (!Regex.IsMatch(text, @"\bas\s+a[n]?\b", RegexOptions.IgnoreCase))
+        {
+            issues.Add("Missing 'As a [role]' persona — unclear who benefits.");
+            suggestions.Add("Rewrite as: \"As a [user type], I want [goal] so that [benefit].\"");
+            score -= 30;
+        }
+
+        // the "so that" clause is where the actual value lives — don't skip it
+        if (!Regex.IsMatch(text, @"\bso\s+that\b|\bin\s+order\s+to\b", RegexOptions.IgnoreCase))
+        {
+            issues.Add("Missing 'So that [benefit]' — the business value isn't stated.");
+            suggestions.Add("Add a 'so that' clause explaining why this matters to the user.");
+            score -= 25;
+        }
+
+        // purely technical stories with no user angle should be tasks, not user stories
+        string[] techWords = ["refactor", "upgrade", "migrate", "configure", "install",
+                              "rename column", "update schema", "deploy", "pipeline"];
+
+        if (techWords.Count(k => text.Contains(k)) >= 2 && !text.Contains("as a"))
+        {
+            issues.Add("Looks like a technical task with no stated user value.");
+            suggestions.Add("Link to user benefit, or log this as a task/spike rather than a user story.");
+            score -= 20;
+        }
+
+        return BuildResult(InvestCriterion.Valuable, issues, suggestions, score);
+    }
+
+    // E — Estimable
+    // The team needs enough info to put a number on it — vague stories can't be planned
+    static CriterionResult CheckEstimable(WorkItem item)
+    {
+        var issues      = new List<string>();
+        var suggestions = new List<string>();
+        int score       = 100;
+
+        // no story points means planning will be a guess
+        if (item.Fields.StoryPoints is null or <= 0)
+        {
+            issues.Add("No story points estimated.");
+            suggestions.Add("Estimate during backlog refinement before bringing to sprint planning.");
+            score -= 30;
+        }
+
+        // too short to understand, let alone estimate
+        int words = WordCount(item.Fields.PlainDescription);
+        if (words < 10)
+        {
+            issues.Add($"Description is only {words} words — not enough context to estimate.");
+            suggestions.Add("Expand the description so the team knows what they're signing up for.");
+            score -= 25;
+        }
+
+        var fullText = $"{item.Fields.PlainDescription} {item.Fields.PlainAcceptanceCriteria}".ToLowerInvariant();
+
+        // these phrases are red flags — if the team doesn't know what it is, they can't size it
+        string[] vague = ["somehow", "tbd", "to be decided", "unknown", "figure out",
+                          "investigate later", "unclear", "not sure"];
+
+        var vagueFound = vague.Where(k => fullText.Contains(k)).ToList();
+        if (vagueFound.Count != 0)
+        {
+            issues.Add($"Vague language makes estimation hard: '{string.Join("', '", vagueFound)}'.");
+            suggestions.Add("Resolve unknowns before estimating — or convert to a spike.");
+            score -= 10 * Math.Min(vagueFound.Count, 2);
+        }
+
+        // "the entire system" type language means nobody knows where it ends
+        string[] bigScope = ["entire system", "whole platform", "everything", "all pages",
+                             "complete rewrite", "all users", "every feature"];
+
+        if (bigScope.Any(k => fullText.Contains(k)))
+        {
+            issues.Add("Scope language suggests this might be an epic, not a story.");
+            suggestions.Add("Split into smaller stories before estimating.");
+            score -= 20;
+        }
+
+        return BuildResult(InvestCriterion.Estimable, issues, suggestions, score);
+    }
+
+    // S — Small
+    // Should fit in a sprint. If it can't, it needs to be broken down.
+    static CriterionResult CheckSmall(WorkItem item)
+    {
+        var issues      = new List<string>();
+        var suggestions = new List<string>();
+        int score       = 100;
+
+        // 8 points is our cutoff — above that it's basically an epic
+        if (item.Fields.StoryPoints > 8)
+        {
+            issues.Add($"Story points ({item.Fields.StoryPoints}) exceed the recommended max of 8.");
+            suggestions.Add("Break this down into smaller stories, each deliverable within a sprint.");
+            score -= 35;
+        }
+
+        // too many acceptance criteria usually means too many things happening in one story
+        if (!string.IsNullOrWhiteSpace(item.Fields.PlainAcceptanceCriteria))
+        {
+            int acCount = SentenceCount(item.Fields.PlainAcceptanceCriteria);
+            if (acCount > 7)
+            {
+                issues.Add($"Acceptance criteria has {acCount} items — probably covering multiple features.");
+                suggestions.Add("Group the AC into separate stories, one per user-facing behaviour.");
+                score -= 20;
+            }
+        }
+
+        // "X and Y and Z" in a title is almost always two or three stories pretending to be one
+        int andCount = Regex.Matches(item.Fields.Title.ToLowerInvariant(), @"\band\b").Count;
+        if (andCount >= 2)
+        {
+            issues.Add($"Title has {andCount} 'and' conjunctions — likely bundled work.");
+            suggestions.Add("Split into focused stories, one per user action or outcome.");
+            score -= 15 * andCount;
+        }
+
+        return BuildResult(InvestCriterion.Small, issues, suggestions, score);
+    }
+
+    // T — Testable
+    // If you can't write a test for it, how do you know when you're done?
+    static CriterionResult CheckTestable(WorkItem item)
+    {
+        var issues      = new List<string>();
+        var suggestions = new List<string>();
+        int score       = 100;
+
+        if (string.IsNullOrWhiteSpace(item.Fields.PlainAcceptanceCriteria))
+        {
+            // no AC at all is a big problem — nothing to test against
+            issues.Add("No acceptance criteria defined.");
+            suggestions.Add("Add AC using Given/When/Then format or clear 'the system must...' statements.");
+            score -= 50;
+        }
+        else
+        {
+            var ac = item.Fields.PlainAcceptanceCriteria.ToLowerInvariant();
+
+            // Given/When/Then or must/should language = testable. Neither = not great.
+            bool hasStructure = new[] { "given ", "when ", "then ", "must", "should", "shall",
+                                        "verify", "confirm", "display", "return", "prevent" }
+                                    .Any(k => ac.Contains(k));
+
+            if (!hasStructure)
+            {
+                issues.Add("Acceptance criteria have no verifiable conditions.");
+                suggestions.Add("Use 'Given/When/Then' or 'The system must/should...' language.");
+                score -= 25;
+            }
+
+            // these words sound like requirements but you can't actually test them
+            string[] fuzzy = ["easy to use", "user-friendly", "fast", "intuitive",
+                              "seamless", "nice", "better", "improved"];
+
+            var fuzzyFound = fuzzy.Where(k => ac.Contains(k)).ToList();
+            if (fuzzyFound.Count != 0)
+            {
+                issues.Add($"Subjective language in AC: '{string.Join("', '", fuzzyFound)}'.");
+                suggestions.Add("Replace with measurable criteria — e.g. 'loads in under 2s' instead of 'fast'.");
+                score -= 10 * Math.Min(fuzzyFound.Count, 3);
+            }
+
+            // one vague sentence isn't really acceptance criteria
+            if (SentenceCount(item.Fields.PlainAcceptanceCriteria) < 2)
+            {
+                issues.Add("Fewer than 2 testable conditions — covers only the happy path at best.");
+                suggestions.Add("Add conditions for edge cases and error states too.");
+                score -= 15;
+            }
+        }
+
+        return BuildResult(InvestCriterion.Testable, issues, suggestions, score);
+    }
+
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+    // Turns a score into a Pass/Warning/Fail and assembles the result object
+    static CriterionResult BuildResult(InvestCriterion criterion, List<string> issues, List<string> suggestions, int score)
+    {
+        score = Math.Max(0, score);
+
+        var severity = score >= 75 ? Severity.Pass
+                     : score >= 45 ? Severity.Warning
+                     : Severity.Fail;
+
+        var summary = severity switch
+        {
+            Severity.Pass    => $"{criterion} looks good.",
+            Severity.Warning => $"{criterion} has some concerns.",
+            _                => $"{criterion} needs attention."
+        };
+
+        return new CriterionResult(criterion, severity, summary, issues, suggestions, score);
+    }
+
+    // ADO sends descriptions as HTML — strip tags before doing any text analysis
+    public static string StripHtml(string html)
+    {
+        if (string.IsNullOrWhiteSpace(html)) return "";
+        var stripped = Regex.Replace(html, "<[^>]*>", " ");
+        return Regex.Replace(stripped, @"\s+", " ").Trim();
+    }
+
+    static int WordCount(string text) =>
+        string.IsNullOrWhiteSpace(text) ? 0
+        : text.Split([' ', '\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries).Length;
+
+    static int SentenceCount(string text) =>
+        string.IsNullOrWhiteSpace(text) ? 0
+        : text.Split(['.', '!', '?'], StringSplitOptions.RemoveEmptyEntries).Length;
+
+
+// ─── Console Output ───────────────────────────────────────────────────────────
+
+    public static void PrintReport(InvestReport report)
+    {
+        Console.WriteLine();
+        Console.WriteLine(new string('═', 70));
+        Write($"  Story #{report.WorkItemId}: {report.Title}", ConsoleColor.White);
+        Console.WriteLine($"  Type: {report.WorkItemType}");
+        Console.WriteLine(new string('═', 70));
+
+        PrintBar("  Overall INVEST Score", report.OverallScore, report.OverallSeverity);
+        Console.WriteLine();
+        Console.WriteLine("  Criteria Breakdown:");
+        Console.WriteLine(new string('─', 70));
+
+        foreach (var r in report.Results)
+        {
+            var icon = r.Severity switch { Severity.Pass => "✓", Severity.Warning => "⚠", _ => "✗" };
+            Write($"  [{icon}] {r.Criterion,-14} — {r.Score,3}/100  {r.Summary}", SeverityColor(r.Severity));
+
+            foreach (var issue in r.Issues)
+                Write($"       Issue:  {issue}", ConsoleColor.Yellow);
+
+            foreach (var suggestion in r.Suggestions)
+                Write($"       Fix:    {suggestion}", ConsoleColor.Cyan);
+        }
+
+        if (report.TopActions.Count > 0)
+        {
+            Console.WriteLine();
+            Write("  Top Priority Actions:", ConsoleColor.Magenta);
+            for (int i = 0; i < report.TopActions.Count; i++)
+                Console.WriteLine($"    {i + 1}. {report.TopActions[i]}");
+        }
+
+        Console.WriteLine(new string('─', 70));
+    }
+
+    public static void PrintBatchSummary(BatchReport batch)
+    {
+        Console.WriteLine();
+        Console.WriteLine(new string('═', 70));
+        Write("  BATCH SUMMARY", ConsoleColor.White);
+        Console.WriteLine(new string('═', 70));
+        Console.WriteLine($"  Total:         {batch.Total}");
+        Write($"  Passing:       {batch.Passing}", ConsoleColor.Green);
+        Write($"  Warnings:      {batch.Warnings}", ConsoleColor.Yellow);
+        Write($"  Failing:       {batch.Failing}", ConsoleColor.Red);
+        Console.WriteLine($"  Average Score: {batch.AverageScore:F1}/100");
+        Console.WriteLine();
+        Console.WriteLine("  Average by Criterion:");
+        Console.WriteLine(new string('─', 70));
+
+        // iterate in INVEST acronym order — same order as the enum definition
+        foreach (var kv in batch.ScoreByCriterion.OrderBy(k => k.Key))
+        {
+            var sev = kv.Value >= 75 ? Severity.Pass : kv.Value >= 45 ? Severity.Warning : Severity.Fail;
+            PrintBar($"    {kv.Key,-14}", (int)kv.Value, sev);
+        }
+
+        Console.WriteLine();
+        Write($"  Weakest Criterion: {batch.WeakestCriterion}", ConsoleColor.Red);
+        Console.WriteLine(new string('═', 70));
+    }
+
+    static void PrintBar(string label, int score, Severity severity)
+    {
+        var bar = new string('█', score / 5) + new string('░', 20 - score / 5);
+        Write($"{label}: [{bar}] {score,3}/100", SeverityColor(severity));
+    }
+
+    static ConsoleColor SeverityColor(Severity s) =>
+        s == Severity.Pass ? ConsoleColor.Green : s == Severity.Warning ? ConsoleColor.Yellow : ConsoleColor.Red;
+
+    static void Write(string text, ConsoleColor color)
+    {
+        Console.ForegroundColor = color;
+        Console.WriteLine(text);
+        Console.ResetColor();
+    }
+
+// ─── Gherkin Output ──────────────────────────────────────────────────────────
+
+    // Builds a .feature file string for a single story report
+    public static string BuildGherkin(InvestReport report)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        // feature header — one feature file per user story
+        sb.AppendLine($"Feature: INVEST Validation — Story #{report.WorkItemId}");
+        sb.AppendLine($"  As a product owner");
+        sb.AppendLine($"  I want user stories to meet the INVEST criteria");
+        sb.AppendLine($"  So that the team can plan, estimate, and deliver them effectively");
+        sb.AppendLine();
+        sb.AppendLine($"  # Story: {report.Title}");
+        sb.AppendLine($"  # Type:  {report.WorkItemType}");
+        sb.AppendLine($"  # Overall Score: {report.OverallScore}/100 — {report.OverallSeverity}");
+        sb.AppendLine();
+
+        // one scenario per INVEST criterion
+        foreach (var result in report.Results)
+        {
+            sb.AppendLine($"  Scenario: {result.Criterion} criterion validation");
+            sb.AppendLine($"    Given a user story with id #{report.WorkItemId}");
+            sb.AppendLine($"    When the story is analysed for the {result.Criterion} criterion");
+            sb.AppendLine($"    Then the score should be {result.Score} out of 100");
+            sb.AppendLine($"    And the result is '{result.Severity}'");
+
+            // each issue becomes an And line
+            foreach (var issue in result.Issues)
+                sb.AppendLine($"    And an issue is identified as '{EscapeGherkin(issue)}'");
+
+            // each suggestion becomes an And line
+            foreach (var suggestion in result.Suggestions)
+                sb.AppendLine($"    And the recommended fix is '{EscapeGherkin(suggestion)}'");
+
+            // if no issues, explicitly state it passed cleanly
+            if (result.Issues.Count == 0)
+                sb.AppendLine($"    And no issues were identified");
+
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
+    // Builds a summary .feature file covering all stories in the batch
+    public static string BuildBatchGherkin(BatchReport batch)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        sb.AppendLine("Feature: INVEST Batch Validation Summary");
+        sb.AppendLine("  As a delivery team");
+        sb.AppendLine("  I want all user stories in the backlog to meet INVEST criteria");
+        sb.AppendLine("  So that every story is ready to be picked up in a sprint");
+        sb.AppendLine();
+        sb.AppendLine($"  # Total stories validated: {batch.Total}");
+        sb.AppendLine($"  # Average score: {batch.AverageScore:F1}/100");
+        sb.AppendLine($"  # Weakest criterion across the batch: {batch.WeakestCriterion}");
+        sb.AppendLine();
+
+        sb.AppendLine("  Scenario: Overall batch quality");
+        sb.AppendLine($"    Given {batch.Total} user stories were pulled from Azure DevOps");
+        sb.AppendLine($"    When all stories are validated against INVEST");
+        sb.AppendLine($"    Then {batch.Passing} stories should pass all criteria");
+        sb.AppendLine($"    And {batch.Warnings} stories should have warnings");
+        sb.AppendLine($"    And {batch.Failing} stories should fail");
+        sb.AppendLine($"    And the average score across all stories should be {batch.AverageScore:F1} out of 100");
+        sb.AppendLine();
+
+        // one scenario per criterion showing the average score across the batch
+        sb.AppendLine("  Scenario: Criterion scores across the batch");
+        sb.AppendLine("    Given all stories have been validated");
+        sb.AppendLine("    When average scores are calculated per INVEST criterion");
+        foreach (var kv in batch.ScoreByCriterion.OrderBy(k => k.Key))
+        {
+            var status = kv.Value >= 75 ? "passing" : kv.Value >= 45 ? "needs improvement" : "failing";
+            sb.AppendLine($"    Then the average {kv.Key} score should be {kv.Value:F1} out of 100 and is '{status}'");
+        }
+        sb.AppendLine();
+
+        // a scenario per story summarising its outcome
+        foreach (var report in batch.Reports)
+        {
+            sb.AppendLine($"  Scenario: Story #{report.WorkItemId} overall result");
+            sb.AppendLine($"    Given story #{report.WorkItemId} titled '{EscapeGherkin(report.Title)}'");
+            sb.AppendLine($"    When the story is validated against all INVEST criteria");
+            sb.AppendLine($"    Then the overall score should be {report.OverallScore} out of 100");
+            sb.AppendLine($"    And the overall result is '{report.OverallSeverity}'");
+            sb.AppendLine($"    And {report.PassCount} criteria pass, {report.WarningCount} warn, and {report.FailCount} fail");
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
+    // Gherkin strings can't contain unescaped quotes — swap them for single quotes
+    static string EscapeGherkin(string text) => text.Replace("\"", "'");
+
+} // end Validator
+
+
+// ─── Other ways to pull data if you need them later ──────────────────────────
+
+// Multiple work items at once (comma-separated IDs) — already returns batch shape, no wrapping needed:
+// var batchJson   = await http.GetStringAsync(
+//     "https://dev.azure.com/burlaka1140/aggy/_apis/wit/workitems?ids=19,20,21&api-version=7.0");
+// var response    = Validator.ParseJson(batchJson);
+
+// From a saved JSON file:
+// var response = Validator.ParseJson(await File.ReadAllTextAsync("workitems.json"));
+
+// ─── JSON Source Generator Context ───────────────────────────────────────────
+// This tells the compiler exactly which types need JSON support at build time,
+// so we don't need reflection at runtime — fixes the .NET 10 serialisation error.
+
+[JsonSerializable(typeof(AzureDevOpsResponse))]
+[JsonSerializable(typeof(WorkItem))]
+[JsonSerializable(typeof(WorkItemFields))]
+[JsonSerializable(typeof(WorkItemRelation))]
+[JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
+internal partial class InvestJsonContext : JsonSerializerContext { }
