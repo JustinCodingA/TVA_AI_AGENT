@@ -1,5 +1,5 @@
 // INVEST User Story Validator for Azure DevOps
-// No AI integration no Gherkin
+// This version does have baseline gherkin format output
 // Scores each story against Independent, Negotiable, Valuable, Estimable, Small, Testable.
 
 using System.Text.Json;
@@ -9,7 +9,7 @@ using System.Text.RegularExpressions;
 // ─── Entry Point ──────────────────────────────────────────────────────────────
 // Everything executable lives here. Types and methods are below in Validator.
 
-// token may need to be regenerated
+// may need to generatenew token
 const string token = "CLm1quEeBgJOJWNSRihAJI0b4vfEw1V01ieXMjyUiPCuXmgO5XI3JQQJ99CCACAAAAAAAAAAAAASAZDO1PXo";
 const string url   = "https://dev.azure.com/burlaka1140/aggy/_apis/wit/workitems/19?api-version=7.0";
 
@@ -704,6 +704,9 @@ static class Validator
 [JsonSerializable(typeof(AzureDevOpsResponse))]
 [JsonSerializable(typeof(WorkItem))]
 [JsonSerializable(typeof(WorkItemFields))]
+[JsonSerializable(typeof(WorkItemRelation))]
+[JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
+internal partial class InvestJsonContext : JsonSerializerContext { }
 [JsonSerializable(typeof(WorkItemRelation))]
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
 internal partial class InvestJsonContext : JsonSerializerContext { }
