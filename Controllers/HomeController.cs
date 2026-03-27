@@ -45,9 +45,17 @@ public class HomeController : Controller
 		return "no stories found\n" + features_string;
 	}
 
-	//TODO: return stories for each 
-	// for now return features
-	return "success\n" + features_string;
+	//Get stories from all features in epic
+	dynamic stories = await get_stories_by_features(project, features);
+	Console.WriteLine("stories list: ");
+	List<dynamic> res = new List<dynamic>();
+	foreach(var item in stories) {
+		dynamic details = await get_story_details(project, item);
+		res.Add("{ \nid: " + details.id + "\ntitle: " + details["fields"]["System.Title"] + "\nDescription: " + details["fields"]["System.Description"] + "\nAcceptanceCriteria: " + details["fields"]["Microsoft.VSTS.Common.AcceptanceCriteria"] + "\n}");
+
+	}
+
+	return "success\n" + string.Join(", ", res);
     }
 
 
