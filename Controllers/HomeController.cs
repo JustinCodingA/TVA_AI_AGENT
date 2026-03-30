@@ -6,6 +6,7 @@ using Newtonsoft.Json.Linq;
 using Newtonsoft.Json;
 using TVA_AI_AGENT.Models;
 using static TVA_AI_AGENT.Service.ADO;
+using static TVA_AI_AGENT.Service.Agent;
 
 
 namespace TVA_AI_AGENT.Controllers;
@@ -30,32 +31,40 @@ public class HomeController : Controller
     }
 
     public async Task<string> Get_Stories_By_Epic(string project, string epic_title, string iteration){
-	//Get epic first
-    	dynamic epic = await get_epics_by_path(project, epic_title, iteration);
-	Console.WriteLine($"epics response: \n{epic}");
-	if (epic.workItems.Count < 1) {
-		return "no epic found";
-	}
-	
-	//Get features from epic
-	dynamic features = await get_features_by_epic(project, epic.workItems[0].id.ToString());
-	Console.WriteLine($"features response: \n{features}");
-	string features_string = JsonConvert.SerializeObject(features);
-	if (features.value.Count < 1) {
-		return "no stories found\n" + features_string;
-	}
+	    try {
 
-	//Get stories from all features in epic
-	dynamic stories = await get_stories_by_features(project, features);
-	Console.WriteLine("stories list: ");
-	List<dynamic> res = new List<dynamic>();
-	foreach(var item in stories) {
-		dynamic details = await get_story_details(project, item);
-		res.Add("{ \nid: " + details.id + "\ntitle: " + details["fields"]["System.Title"] + "\nDescription: " + details["fields"]["System.Description"] + "\nAcceptanceCriteria: " + details["fields"]["Microsoft.VSTS.Common.AcceptanceCriteria"] + "\n}");
+		    //Get epic first
+		    dynamic epic = await get_epics_by_path(project, epic_title, iteration);
+		    Console.WriteLine($"epics response: \n{epic}");
+		    if (epic.workItems.Count < 1) {
+			    return "no epic found";
+		    }
 
-	}
+		    //Get features from epic
+		    dynamic features = await get_features_by_epic(project, epic.workItems[0].id.ToString());
+		    Console.WriteLine($"features response: \n{features}");
+		    string features_string = JsonConvert.SerializeObject(features);
+		    if (features.value.Count < 1) {
+			    return "no stories found\n" + features_string;
+		    }
 
-	return "success\n" + string.Join(", ", res);
+		    //Get stories from all features in epic
+		    dynamic stories = await get_stories_by_features(project, features);
+		    Console.WriteLine("stories list: ");
+		    List<dynamic> res = new List<dynamic>();
+		    foreach(var item in stories) {
+			    dynamic details = await get_story_details(project, item);
+			    res.Add("{ \n\"id\": " + details.id + ",\n\"title\": \"" + details["fields"]["System.Title"] + "\",\n\"Description\": \"" + details["fields"]["System.Description"] + "\",\n\"AcceptanceCriteria\": \"" + details["fields"]["Microsoft.VSTS.Common.AcceptanceCriteria"] + "\"\n}");
+			    /*res.Add("{ \n\"id\": " + details.id + ",\n\"title\": \"" + details["fields"]["System.Title"] + "\",\n\"AcceptanceCriteria\": \"" + details["fields"]["Microsoft.VSTS.Common.AcceptanceCriteria"] + "\"\n}");*/
+
+		    }
+		    dynamic analysis = await copilot_analyze(res);
+		    return "success, stories in this epic: \n" + string.Join(", ", res) + "\n story analyzed: \n "  + res[0] + "\nagent response: \n" + analysis;
+
+	    } catch (Exception e) {
+		    Console.WriteLine($"Error: {e}");
+		    return $"Error: {e}";
+	    }
     }
 
 
