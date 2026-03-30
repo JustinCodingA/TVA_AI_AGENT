@@ -5,6 +5,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
+builder.Services.AddRequestTimeouts();
 
 var app = builder.Build();
 
@@ -33,7 +34,7 @@ app.MapControllerRoute(
 app.MapControllerRoute(
     name: "get_epic",
     pattern: "/analyze/{project}/{epic_title}/{iteration}",
-    defaults: new {controller="Home", action="Get_Stories_By_Epic"});
+    defaults: new {controller="Home", action="Get_Stories_By_Epic"}).WithRequestTimeout(TimeSpan.FromSeconds(300));
 
 app.MapControllerRoute(
     name: "test_it",
