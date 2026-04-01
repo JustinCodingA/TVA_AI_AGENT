@@ -4,7 +4,7 @@ basic usage:
 
 	-Example, try running the url: http://localhost:5031/analyze/POC%20-%20UTC%20CAPSTONE/Payments%20&%20Monetization/POC%20-%20UTC%20CAPSTONE
 
-	-Make sure to use url encoding chars such as %20 for space and %5C for '\' etc.
+	-Make sure to use url encoding %5C for '\' if needed
 
 	-For this current version, make sure the iteration is included
 

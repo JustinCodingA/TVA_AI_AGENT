@@ -33,6 +33,8 @@ public class HomeController : Controller
     public async Task<string> Get_Stories_By_Epic(string project, string epic_title, string iteration){
 	    try {
 
+
+
 		    //Get epic first
 		    dynamic epic = await get_epics_by_path(project, epic_title, iteration);
 		    Console.WriteLine($"epics response: \n{epic}");
@@ -49,29 +51,42 @@ public class HomeController : Controller
 		    }
 
 		    //Get stories from all features in epic
-		    dynamic stories = await get_stories_by_features(project, features);
+		    dynamic feature_stories_obj = await get_stories_by_features(project, features);
+		    //test
+
+		    List<dynamic> stories = new List<dynamic>();
+		    foreach(var feature in feature_stories_obj) {
+			    foreach(var story in feature.Children) {
+				    stories.Add(story);
+			    }
+		    }
+		    //test
 		    Console.WriteLine("stories list: ");
 		    List<dynamic> res = new List<dynamic>();
 		    foreach(var item in stories) {
 			    dynamic details = await get_story_details(project, item);
 			    res.Add("{ \n\"id\": " + details.id + ",\n\"title\": \"" + details["fields"]["System.Title"] + "\",\n\"Description\": \"" + details["fields"]["System.Description"] + "\",\n\"AcceptanceCriteria\": \"" + details["fields"]["Microsoft.VSTS.Common.AcceptanceCriteria"] + "\"\n}");
-			    /*res.Add("{ \n\"id\": " + details.id + ",\n\"title\": \"" + details["fields"]["System.Title"] + "\",\n\"AcceptanceCriteria\": \"" + details["fields"]["Microsoft.VSTS.Common.AcceptanceCriteria"] + "\"\n}");*/
 
 		    }
-		    dynamic analysis = await copilot_analyze(res);
-		    return "success, stories in this epic: \n" + string.Join(", ", res) + "\n story analyzed: \n "  + res[0] + "\nagent response: \n" + analysis;
+		    if(res.Count < 1) {
+			    return "not stories in this epic";
+		    }
+
+		    //send stories to be analyzed by agent
+		    dynamic analysis = await copilot_analyze(res, feature_stories_obj);
+		    dynamic analysis_obj = JObject.Parse(analysis);
+		    dynamic create_test_res = await create_tests((string)features.value[0].Title, analysis_obj.suites, project);
+		    return "success, stories in this epic: \n" + string.Join(", ", res) + "\n story analyzed: \n "  + res[0] + "\nagent response: \n" + analysis + "\ncreate_test_plan_res: \n" + create_test_res;
+
+
+
 
 	    } catch (Exception e) {
+
 		    Console.WriteLine($"Error: {e}");
 		    return $"Error: {e}";
+
 	    }
-    }
-
-
-    public async Task<string> Iterate(string iter) {
-	    Console.WriteLine($"Iteration from url: {iter}");
-	    return iter;
-
     }
 
     public IActionResult Privacy()
