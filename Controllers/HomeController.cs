@@ -14,7 +14,6 @@ namespace TVA_AI_AGENT.Controllers;
 public class HomeController : Controller
 {
     public async Task<IActionResult> Index(){
-    	await get_epics_by_path("aggy", "aggy-test-epic-2", "2");
         return View();
     }
 
