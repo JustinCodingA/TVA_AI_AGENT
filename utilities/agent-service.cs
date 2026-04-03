@@ -11,6 +11,7 @@ static class Agent {
 
 
 	static string agent_instructions = Environment.GetEnvironmentVariable("AGENT_INSTRUCTIONS");
+	static string agent_model = Environment.GetEnvironmentVariable("AGENT_MODEL");
 
 	public static async Task<dynamic> copilot_analyze(dynamic stories, dynamic feature_story_map) {
 		string stories_json = JsonSerializer.Serialize(stories);
@@ -19,7 +20,7 @@ static class Agent {
 		await client.StartAsync();
 		
 		await using var session = await client.CreateSessionAsync(new SessionConfig {
-				Model = "gemini 3.1 pro",
+				Model = agent_model,
 				OnPermissionRequest = PermissionHandler.ApproveAll,
 				});
 

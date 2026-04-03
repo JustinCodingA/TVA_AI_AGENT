@@ -17,25 +17,24 @@ public class HomeController : Controller
         return View();
     }
 
-    public async Task<string> Get_Epic(string project, string title, string iteration){
-    	/*dynamic res = await get_epics_by_path("aggy-test-epic-2", """aggy\\Iteration 2""");*/
-    	dynamic res = await get_epics_by_path(project, title, iteration);
-	/*var options = new JsonSerializerOptions {*/
-	/*	IncludeFields = true,*/
-	/*};*/
-	/*string res_string = JsonSerializer.Serialize(res, options);*/
-	Console.WriteLine($"\n\ncontroller out raw: \n {res}");
-	/*Console.WriteLine($"\n\ncontroller out string: \n {res_string}");*/
-	return res;
+    public async Task<string> Area(string area, string tags){
+	    return $"Area passed is {area}\nTags passed: {tags}";
     }
 
-    public async Task<string> Get_Stories_By_Epic(string project, string epic_title, string iteration){
+
+    public async Task<string> Analyze_Stories_By_Epic(string project, string epic_title, string area, string tags){
 	    try {
 
+		    dynamic tag_list;
+		    if(tags != null) {
+			    tag_list = tags.Split(",");
+		    } else {
+			    tag_list = new string[0];
+		    }
 
 
 		    //Get epic first
-		    dynamic epic = await get_epics_by_path(project, epic_title, iteration);
+		    dynamic epic = await get_epics_by_area(project, epic_title, area, tag_list);
 		    Console.WriteLine($"epics response: \n{epic}");
 		    if (epic.workItems.Count < 1) {
 			    return "no epic found";

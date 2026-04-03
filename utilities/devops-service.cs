@@ -47,24 +47,40 @@ static class ADO {
 		return body;
 	}
 
+	public static string epic_query_builder(string title, string[] tags, string area){
+		string query = "{\"query\": \"SELECT [System.Id] FROM WorkItems WHERE [System.WorkItemType] = 'Epic'  AND [System.Title] = \'" + title + "\'\"";
+		if(tags.Length == 0) {
+			return query + "}";
+		}
+		query += $" AND [System.Tags] contains \'{tags[0]}\'";
+		if(tags.Length > 1) {
+			foreach(var tag in tags) {
+				query += $" OR [System.Tags] contains \'{tag}\'";
+			}
+		}
+		query += $" AND [System.AreaPath] = \'{area}\'";
+		return query;
 
+	}
 
 	//takes project info and epic title and returns an epic reference
-	public static async Task<dynamic> get_epics_by_path(string project_title, string title , string iteration) {
-		string url = $"{base_url}/{project_title}/{url_params}";
-		string query = "{\"query\": \"SELECT [System.Id] FROM WorkItems WHERE [System.WorkItemType] = 'Epic' AND [System.IterationPath] = \'"  + iteration  + "\' AND [System.Title] = \'" + title + "\'\"}";
+	public static async Task<dynamic> get_epics_by_area(string project_title, string title, string area, string[] tags) {
+
+		string url = $"{base_url}{project_title}/_apis/wit/wiql?api-version=7.0";
+		string query = epic_query_builder(title, tags, area);
 		dynamic res = await post_api(url, query);
-		Console.WriteLine($"debug res: \n {res}");
 		dynamic res_obj = JObject.Parse(res);
 		return res_obj;
 	}
+
+
+
 
 	//takes an epic id and returns a list of feature references 
 	public static async Task<dynamic> get_features_by_epic(string project_title, string epic_id) {
 		dynamic res = await get_api("https://analytics.dev.azure.com/" + org + "/" + project_title + "/_odata/v4.0-preview/workitems/?$filter=WorkItemType eq 'Epic' and WorkItemId eq " + epic_id + "&$select=WorkItemId, Title, WorkItemType&$expand=Children($select=WorkItemId, Title, WorkItemType)");
 		dynamic res_obj = JObject.Parse(res);
-		var features = res_obj;
-		return features;
+		return res_obj;
 	}
 
 	//takes list of features references and returns a list of references to all stories across the features 
@@ -83,10 +99,8 @@ static class ADO {
 		get_story_ids_query_pt1 = get_story_ids_query_pt1.TrimEnd(',');
 
 		dynamic res = await get_api($"{get_story_ids_query_pt1}{get_story_ids_query_pt2}");
-		Console.WriteLine($"response story from features:");
 
 		dynamic res_obj = JObject.Parse(res);
-		Console.WriteLine(res_obj);
 
 		return res_obj.value;
 	}
@@ -96,12 +110,6 @@ static class ADO {
 		string url = $"{base_url}{project_title}/_apis/wit/workitems/{(string)story.WorkItemId}?api-version=7.0";
 			dynamic res = await get_api(url);
 		dynamic res_obj = JObject.Parse(res);
-		Console.WriteLine($"\nStory id: {res_obj.id}");
-		Console.WriteLine($"Story title: {res_obj.fields["System.Title"]}");
-		Console.WriteLine("story description:");
-		Console.WriteLine(res_obj["fields"]["System.Description"]);
-		Console.WriteLine("story acceptance criteria:");
-		Console.WriteLine(res_obj["fields"]["Microsoft.VSTS.Common.AcceptanceCriteria"]);
 		return res_obj;
 	}
 

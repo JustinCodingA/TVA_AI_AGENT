@@ -32,14 +32,14 @@ app.MapControllerRoute(
     .WithStaticAssets();
 
 app.MapControllerRoute(
-    name: "get_epic",
-    pattern: "/analyze/{project}/{epic_title}/{iteration}",
-    defaults: new {controller="Home", action="Get_Stories_By_Epic"}).WithRequestTimeout(TimeSpan.FromSeconds(300));
+    name: "get_analysis",
+    pattern: "/analyze/{project}/{epic_title}/{area}/{tags?}",//tags like ?tags=as,df,gh (no space)
+    defaults: new {controller="Home", action="Analyze_Stories_By_Epic"}).WithRequestTimeout(TimeSpan.FromSeconds(300));
 
 app.MapControllerRoute(
-    name: "test_it",
-    pattern: "/iteration/{iter}",
-    defaults: new {controller="Home", action="Iterate"});
+    name: "area-test",
+    pattern: "/area/{area}/{tags?}",
+    defaults: new {controller="Home", action="Area"});
 
 
 app.Run();
