@@ -48,17 +48,18 @@ static class ADO {
 	}
 
 	public static string epic_query_builder(string title, string[] tags, string area){
-		string query = "{\"query\": \"SELECT [System.Id] FROM WorkItems WHERE [System.WorkItemType] = 'Epic'  AND [System.Title] = \'" + title + "\'\"";
-		if(tags.Length == 0) {
-			return query + "}";
-		}
-		query += $" AND [System.Tags] contains \'{tags[0]}\'";
-		if(tags.Length > 1) {
-			foreach(var tag in tags) {
-				query += $" OR [System.Tags] contains \'{tag}\'";
-			}
-		}
-		query += $" AND [System.AreaPath] = \'{area}\'";
+		string query = "{\"query\": \"SELECT [System.Id] FROM WorkItems WHERE [System.WorkItemType] = 'Epic'  AND [System.Title] = \'" + title + "\'";
+		/*if(tags.Length == 0) {*/
+		/*	return query + "}";*/
+		/*}*/
+		/*query += $" AND [System.Tags] contains \'{tags[0]}\'";*/
+		/*if(tags.Length > 1) {*/
+		/*	foreach(var tag in tags) {*/
+		/*		query += $" OR [System.Tags] contains \'{tag}\'";*/
+		/*	}*/
+		/*}*/
+		query += $" AND [System.AreaPath] = \'{area}\'\"" + "}";
+		Console.WriteLine($"Epic query debug: {query}");
 		return query;
 
 	}
@@ -133,12 +134,12 @@ static class ADO {
 		dynamic res_obj = JObject.Parse(res);
 		return res_obj;
 	}
-	public static async Task<dynamic> create_test_case(string project_title, string story_title, dynamic scenario) {
+	public static async Task<dynamic> create_test_case(string project_title, string story_title, dynamic scenario, string area_path) {
 		string url = $"{base_url}{project_title}/_apis/wit/workitems/$Test%20Case?api-version=7.1";
 		string steps = steps_builder(0, scenario.steps);
 		steps = $"<steps id=\"0\" last=\"{((int)scenario.steps.Count + 1).ToString()}\">{steps}</steps>";
 		var title = new patch_json("add", "/fields/System.Title", $"{story_title}");
-		var area = new patch_json("add", "/fields/System.AreaPath", project_title);
+		var area = new patch_json("add", "/fields/System.AreaPath", area_path);
 		var test_steps = new patch_json("add", "/fields/Microsoft.VSTS.TCM.Steps", steps);
 		List<patch_json> patch = new List<patch_json>{title, area, test_steps};
 		string content = JsonConvert.SerializeObject(patch);
@@ -162,14 +163,14 @@ static class ADO {
 	}
 
 	//workflow for creating tests: create test plan, create test suite for each feature, create test case for each valid story, link test case to suite
-	public static async Task<dynamic> create_tests(string epic_title, dynamic features, string project_title) {
+	public static async Task<dynamic> create_tests(string epic_title, dynamic features, string project_title, string area) {
 		
-		var new_plan = new create_test_plan_dto(epic_title, project_title);
+		var new_area = new area_dto(area);
+		var new_plan = new create_test_plan_dto(epic_title, new_area);
 		dynamic test_plan_res = await create_test_plan(new_plan, project_title);
 		dynamic test_plan_obj = JObject.Parse(test_plan_res);
 
 		foreach(var feat in features) {
-			var new_area = new area_dto(project_title);
 			var new_suite = new create_test_suite_dto((string)feat.feature_title, "StaticTestSuite",new_area);
 			dynamic suite_res = await create_test_suite(new_suite, (string)test_plan_obj.id, (string)test_plan_obj.rootSuite.id);
 			foreach(var story in feat.stories) {
@@ -177,7 +178,7 @@ static class ADO {
 					continue;
 				}
 				foreach(var scenario in story.test_plan.scenarios){
-					dynamic case_res = await create_test_case(project_title, (string)story.title, scenario);
+					dynamic case_res = await create_test_case(project_title, (string)story.title, scenario, area);
 					dynamic link_res = await link_test_suite((string)test_plan_obj.id, (string)suite_res.value[0].id, (int)case_res.id, project_title);
 
 				}

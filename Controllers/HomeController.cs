@@ -73,7 +73,7 @@ public class HomeController : Controller
 		    //send stories to be analyzed by agent
 		    dynamic analysis = await copilot_analyze(res, feature_stories_obj);
 		    dynamic analysis_obj = JObject.Parse(analysis);
-		    dynamic create_test_res = await create_tests((string)features.value[0].Title, analysis_obj.suites, project);
+		    dynamic create_test_res = await create_tests((string)features.value[0].Title, analysis_obj.suites, project, area);
 		    return "success, stories in this epic: \n" + string.Join(", ", res) + "\n story analyzed: \n "  + res[0] + "\nagent response: \n" + analysis + "\ncreate_test_plan_res: \n" + create_test_res;
 
 
