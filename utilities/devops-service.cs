@@ -102,6 +102,8 @@ static class ADO {
 		Console.WriteLine(res_obj["fields"]["System.Description"]);
 		Console.WriteLine("story acceptance criteria:");
 		Console.WriteLine(res_obj["fields"]["Microsoft.VSTS.Common.AcceptanceCriteria"]);
+		Console.WriteLine("story tags:");
+		Console.WriteLine(JsonConvert.SerializeObject(res_obj["fields"]["System.Tags"]));
 		return res_obj;
 	}
 
