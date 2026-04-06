@@ -1,28 +1,48 @@
+Getting Started: 
+
+Install dependencies: 
+	run dotnet add package {package} for each: 
+		Newtonsoft.Json
+		dotenv.net
+		GitHub.Copilot.SDK
+
+Complete Agent setup:
+	install github copilot-cli
+	login to copilot cli
+
+Create and structure .env file exactly like within project root: 
+	ORGANIZATION="{azure_devops_organization_title}" 
+	PAT="{your_personal_access_token}"
+	AGENT_INSTRUCTIONS="{Updated Prompt}" 
+	AGENT_MODEL="{model}"
+
+Select the most recent prompt from this document:
+https://docs.google.com/document/d/11osk-FNgkc4PpRi0in43gouQsyGPZAZMBG7xsugeus8/edit?usp=sharing
+
+Select a model from this list: 
+https://docs.github.com/en/copilot/reference/ai-models/supported-models
+recommended model: gemini 3.1 pro
+
 basic usage:
-	-analyze/{project_title}/{epic_title}/{iteration}
-		for now returns the epic and its features, currently working on creating taking each story
+	-analyze/{project_title}/{epic_title}/{area}
 
 	-Example, try running the url: http://localhost:5031/analyze/POC%20-%20UTC%20CAPSTONE/Payments%20&%20Monetization/POC%20-%20UTC%20CAPSTONE
 
-	-Make sure to use url encoding %5C for '\' if needed
+	-filter by tags with 'tags' parameter eg. ?tags=1,2,3
 
-	-For this current version, make sure the iteration is included
-
-
-Structure .env file exaclty like: 
-	ORGANIZATION="{azure_devops_organization_title}" (assume case sensitive for now)
-	PAT="{your_personal_access_token}"
-	AGENT_INSTRUCTIONS="You are an analyst for a software development team. Your task is to analyze a given user story pulled from an Azure DevOps project and test it against the INVEST model. If the story is INVEST compiant, return a BDD/Gherkin test plan. Otherwise, return the issues found in the story and a suggested fix. Assume a story is compliant to begin and only say otherwise for very good reasons. Return only the suggested fixes or the test plan, given the decision made." 
-	!!NOTE - Current agent instructions needs work. Still too sensitive and is non-compliance flagging valid stories. Inconsistent behavior for a single story run mutiple times. Adjust this as needed.
+	-Make sure to use url encoding %5C for '\' eg. area path: test/path -> test\\path -> test%5C%5Cpath
 
 
-For dependencies: 
-	run dotnet add package {package} for each: 
-		packages: 
-			Newtonsoft.Json
-			dotenv.net
-			GitHub.Copilot.SDK
 
-For Agent setup:
-	install github copilot-cli
-	login to copilot cli
+NOTES:
+
+- Make sure the prompt is the most recent prompt available. The success of the operation depends on the agent returning a properly structured response
+
+- Agent may return invalid response in rare occurances, which throws a parse error and returns. Simply run again for a new attempt 
+
+- Copilot may hang up from time to time. Just run again
+
+- Just because a story is considered valid at one time, doesnt mean it will always come back validated if run multiple times. Its a consistent model but it is still an ai and nondeterminism is a feature
+
+
+
