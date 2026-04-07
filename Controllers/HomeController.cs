@@ -32,6 +32,8 @@ public class HomeController : Controller
 			    tag_list = new string[0];
 		    }
 
+		    Console.WriteLine($"area passed: {area}");
+
 
 		    //Get epic first
 		    dynamic epic = await get_epics_by_area(project, epic_title, area, tag_list);
@@ -59,7 +61,6 @@ public class HomeController : Controller
 			    }
 		    }
 		    //test
-		    Console.WriteLine("stories list: ");
 		    List<dynamic> res = new List<dynamic>();
 		    foreach(var item in stories) {
 			    dynamic details = await get_story_details(project, item);

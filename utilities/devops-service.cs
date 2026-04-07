@@ -124,14 +124,17 @@ static class ADO {
 	public static async Task<dynamic> create_test_plan(create_test_plan_dto test_plan, string project_title) {
 		string url = $"{base_url}{project_title}/_apis/testplan/plans?api-version=7.1";
 		string content = JsonConvert.SerializeObject(test_plan);
-		dynamic res = await post_api(url, content);
+		string raw_body = "{\"name\": \"" + test_plan.name + "\", \"areaPath\": \"" + test_plan.areaPath + "\"}";
+		dynamic res = await post_api(url, raw_body);
+		Console.WriteLine($"test plan res:\n{res}");
 		return res;
 	}
-	public static async Task<dynamic> create_test_suite(create_test_suite_dto suite, string plan_id, string root_id) {
-		string url = $"{base_url}{suite.area.name}/_apis/test/Plans/{plan_id}/suites/{root_id}?api-version=5.0";
+	public static async Task<dynamic> create_test_suite(create_test_suite_dto suite, string plan_id, string root_id, String project_title) {
+		string url = $"{base_url}{project_title}/_apis/test/Plans/{plan_id}/suites/{root_id}?api-version=5.0";
 		string content = JsonConvert.SerializeObject(suite);
 		dynamic res = await post_api(url, content);
 		dynamic res_obj = JObject.Parse(res);
+		Console.WriteLine($"test suite res:\n{res}");
 		return res_obj;
 	}
 	public static async Task<dynamic> create_test_case(string project_title, string story_title, dynamic scenario, string area_path) {
@@ -145,6 +148,7 @@ static class ADO {
 		string content = JsonConvert.SerializeObject(patch);
 		string res = await post_api_with_patch(url, content);
 		dynamic res_obj = JObject.Parse(res);
+		Console.WriteLine($"test case res:\n{res}");
 
 		return res_obj;
 	}
@@ -164,19 +168,22 @@ static class ADO {
 
 	//workflow for creating tests: create test plan, create test suite for each feature, create test case for each valid story, link test case to suite
 	public static async Task<dynamic> create_tests(string epic_title, dynamic features, string project_title, string area) {
-		
+	
+		//test plan
 		var new_area = new area_dto(area);
-		var new_plan = new create_test_plan_dto(epic_title, new_area);
+		var new_plan = new create_test_plan_dto(epic_title, new_area.name);
 		dynamic test_plan_res = await create_test_plan(new_plan, project_title);
 		dynamic test_plan_obj = JObject.Parse(test_plan_res);
 
+		//test suite
 		foreach(var feat in features) {
 			var new_suite = new create_test_suite_dto((string)feat.feature_title, "StaticTestSuite",new_area);
-			dynamic suite_res = await create_test_suite(new_suite, (string)test_plan_obj.id, (string)test_plan_obj.rootSuite.id);
+			dynamic suite_res = await create_test_suite(new_suite, (string)test_plan_obj.id, (string)test_plan_obj.rootSuite.id, project_title);
 			foreach(var story in feat.stories) {
 				if (!(bool)story.invest_compliant){
 					continue;
 				}
+				//test case + link
 				foreach(var scenario in story.test_plan.scenarios){
 					dynamic case_res = await create_test_case(project_title, (string)story.title, scenario, area);
 					dynamic link_res = await link_test_suite((string)test_plan_obj.id, (string)suite_res.value[0].id, (int)case_res.id, project_title);

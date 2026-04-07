@@ -1,7 +1,7 @@
 namespace TVA_AI_AGENT.dto;
 	public record area_dto(string name);
 	//names must match devops expected payload
-	public record create_test_plan_dto(string name, area_dto area);
+	public record create_test_plan_dto(string name, string areaPath);
 
 	public record create_test_suite_dto(string name, string suiteType, area_dto area);
 
