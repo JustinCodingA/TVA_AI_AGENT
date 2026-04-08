@@ -17,8 +17,41 @@ public class HomeController : Controller
         return View();
     }
 
-    public async Task<string> Area(string area, string tags){
-	    return $"Area passed is {area}\nTags passed: {tags}";
+    public async Task<IActionResult> Area(){
+	    string projects = await get_projects();
+	    /*string epics = await get_epics_by_area_project(project, area);*/
+	    /*return JsonConvert.SerializeObject(projects, Formatting.Indented);*/
+	    return Json(projects);
+
+		
+    }
+
+    public async Task<IActionResult> Get_Projects() {
+	    try{
+		    string projects = await get_projects();
+		    return Json(projects);
+
+
+
+	    } catch (Exception e) {
+		    return Json("error");
+	    }
+
+    }
+
+    public async Task<IActionResult> Get_Epics_By_Project_Area(string area, string project) {
+	    try {
+
+		    string epics = await get_epics_by_area_project(project, area);
+		    return Json(epics);
+
+	    } catch (Exception e) {
+		    return Json("Error");
+	    }
+    }
+
+    public async Task<string> Get_Epics_By_Area_Project() {
+	    return "done";
     }
 
 
@@ -36,7 +69,7 @@ public class HomeController : Controller
 
 
 		    //Get epic first
-		    dynamic epic = await get_epics_by_area(project, epic_title, area, tag_list);
+		    dynamic epic = await get_epic_by_title(project, epic_title, area);
 		    Console.WriteLine($"epics response: \n{epic}");
 		    if (epic.workItems.Count < 1) {
 			    return "no epic found";

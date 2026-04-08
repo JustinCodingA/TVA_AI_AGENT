@@ -38,8 +38,14 @@ app.MapControllerRoute(
 
 app.MapControllerRoute(
     name: "area-test",
-    pattern: "/area/{area}/{tags?}",
+    pattern: "/area",
     defaults: new {controller="Home", action="Area"});
+
+app.MapControllerRoute(
+    name: "fetch_epics_by_project_area",
+    pattern: "/epics/{project}/{area}",
+    defaults: new {controller="Home", action="Get_Epics_By_Project_Area"});
+
 
 
 app.Run();

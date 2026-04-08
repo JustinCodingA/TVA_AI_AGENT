@@ -47,17 +47,16 @@ static class ADO {
 		return body;
 	}
 
-	public static string epic_query_builder(string title, string[] tags, string area){
+	public static async Task<dynamic> get_projects() {
+		string url = $"{base_url}_apis/projects?api-version=7.1";
+		string res = await get_api(url);
+		/*dynamic res_obj = JObject.Parse(res);*/
+		return res;
+	}
+
+
+	public static string epic_query_builder(string title, string area){
 		string query = "{\"query\": \"SELECT [System.Id] FROM WorkItems WHERE [System.WorkItemType] = 'Epic'  AND [System.Title] = \'" + title + "\'";
-		/*if(tags.Length == 0) {*/
-		/*	return query + "}";*/
-		/*}*/
-		/*query += $" AND [System.Tags] contains \'{tags[0]}\'";*/
-		/*if(tags.Length > 1) {*/
-		/*	foreach(var tag in tags) {*/
-		/*		query += $" OR [System.Tags] contains \'{tag}\'";*/
-		/*	}*/
-		/*}*/
 		query += $" AND [System.AreaPath] = \'{area}\'\"" + "}";
 		Console.WriteLine($"Epic query debug: {query}");
 		return query;
@@ -65,13 +64,20 @@ static class ADO {
 	}
 
 	//takes project info and epic title and returns an epic reference
-	public static async Task<dynamic> get_epics_by_area(string project_title, string title, string area, string[] tags) {
+	public static async Task<dynamic> get_epic_by_title(string project_title, string title, string area) {
 
 		string url = $"{base_url}{project_title}/_apis/wit/wiql?api-version=7.0";
-		string query = epic_query_builder(title, tags, area);
+		string query = epic_query_builder(title, area);
 		dynamic res = await post_api(url, query);
 		dynamic res_obj = JObject.Parse(res);
 		return res_obj;
+	}
+
+	public static async Task<dynamic> get_epics_by_area_project(string project_title, string area) {
+		string url = "https://analytics.dev.azure.com/" + org + "/" + project_title + "/_odata/v4.0-preview/workitems/?$filter=WorkItemType eq 'Epic' and Area/AreaPath eq \'" + String.Join(@"\", area.Split(@"\\")) + "\'&$select=WorkItemId, Title, WorkItemType";
+		string res = await get_api(url);
+		dynamic res_obj = JObject.Parse(res);
+		return res;
 	}
 
 
