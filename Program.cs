@@ -46,6 +46,11 @@ app.MapControllerRoute(
     pattern: "/epics/{project}/{area}",
     defaults: new {controller="Home", action="Get_Epics_By_Project_Area"});
 
+app.MapControllerRoute(
+    name: "fetch_projects",
+    pattern: "/projects",
+    defaults: new {controller="Home", action="Get_Projects"});
+
 
 
 app.Run();
