@@ -101,8 +101,8 @@ public class HomeController : Controller
 				//Tag filtering - if tags were passed, only add stories that have a matching tag
 				if (tag_list.Length > 0) {
 					string raw_tags = (string)(details["fields"]["System.Tags"] ?? "");
-					var story_tags = raw_tags.Split(';').Select(t => t.Trim().ToLower()).ToArray();  // stores tags as a semicolon-seperated string
-					bool has_matching_tag = ((string[])tag_list).Any(tags => story_tags.Contains(tags.Trim().ToLower()));
+					var story_tags = raw_tags.Split(';').Select(t => t.Trim()).ToArray();  // stores tags as a semicolon-seperated string
+					bool has_matching_tag = ((string[])tag_list).Any(tags => story_tags.Contains(tags.Trim()));
 					if (!has_matching_tag) {
 						Console.WriteLine($"Story: '{details["fields"]["System.Title"]}'has no matching tags, skipping...");
 						continue;
