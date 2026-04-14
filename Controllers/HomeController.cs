@@ -98,7 +98,19 @@ public class HomeController : Controller
 		    //test
 		    List<dynamic> res = new List<dynamic>();
 		    foreach(var item in stories) {
-			    dynamic details = await get_story_details(project, (string)item.WorkItemId);
+			    dynamic details = await get_story_details(project, item);
+
+				//Tag filtering - if tags were passed, only add stories that have a matching tag
+				if (tag_list.Length > 0) {
+					string raw_tags = (string)(details["fields"]["System.Tags"] ?? "");
+					var story_tags = raw_tags.Split(';').Select(t => t.Trim()).ToArray();  // stores tags as a semicolon-seperated string
+					bool has_matching_tag = ((string[])tag_list).Any(tags => story_tags.Contains(tags.Trim()));
+					if (!has_matching_tag) {
+						Console.WriteLine($"Story: '{details["fields"]["System.Title"]}'has no matching tags, skipping...");
+						continue;
+					}
+				}
+
 			    res.Add("{ \n\"id\": " + details.id + ",\n\"title\": \"" + details["fields"]["System.Title"] + "\",\n\"Description\": \"" + details["fields"]["System.Description"] + "\",\n\"AcceptanceCriteria\": \"" + details["fields"]["Microsoft.VSTS.Common.AcceptanceCriteria"] + "\"\n}");
 
 		    }
