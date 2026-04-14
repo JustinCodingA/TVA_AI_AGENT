@@ -42,9 +42,28 @@ static class ADO {
 		HttpClient client = new HttpClient();
 		client.DefaultRequestHeaders.Add("Authorization", $"Bearer {pat}");
 		var req_body = new StringContent(query, Encoding.UTF8, "application/json-patch+json");
+		Console.WriteLine($"create test case body content: \n{req_body}");
+		Console.WriteLine($"create test case body string: \n{query}");
 		HttpResponseMessage response = await client.PostAsync(url, req_body);
 		var body = await response.Content.ReadAsStringAsync();
 		return body;
+	}
+
+	//used to make POST calls with json patch contetn
+	public static async Task<dynamic> patch_api(string url, string query) {
+		HttpClient client = new HttpClient();
+		client.DefaultRequestHeaders.Add("Authorization", $"Bearer {pat}");
+		var req_body = new StringContent(query, Encoding.UTF8, "application/json-patch+json");
+		HttpResponseMessage response = await client.PatchAsync(url, req_body);
+		var body = await response.Content.ReadAsStringAsync();
+		return body;
+	}
+
+	public static async Task<dynamic> get_areas_by_project(string project_title){
+		string url = $"{base_url}{project_title}/_apis/wit/classificationnodes/areas?$depth=10&api-version=7.1";
+		string res = await get_api(url);
+		dynamic res_obj = JObject.Parse(res);
+		return res;
 	}
 
 	public static async Task<dynamic> get_projects() {
@@ -70,7 +89,14 @@ static class ADO {
 		string query = epic_query_builder(title, area);
 		dynamic res = await post_api(url, query);
 		dynamic res_obj = JObject.Parse(res);
-		return res_obj;
+		Console.WriteLine(res);
+		if (res_obj.workItems == null) {
+			return null;
+		}
+		if (res_obj.workItems.Count < 1 ) {
+			return null;
+		}
+		return res_obj.workItems[0];
 	}
 
 	public static async Task<dynamic> get_epics_by_area_project(string project_title, string area) {
@@ -113,8 +139,8 @@ static class ADO {
 	}
 
 	//takes given story reference and gets all detailed fields
-	public static async Task<dynamic> get_story_details(string project_title, dynamic story) {
-		string url = $"{base_url}{project_title}/_apis/wit/workitems/{(string)story.WorkItemId}?api-version=7.0";
+	public static async Task<dynamic> get_story_details(string project_title, string story_id) {
+		string url = $"{base_url}{project_title}/_apis/wit/workitems/{story_id}?api-version=7.0";
 			dynamic res = await get_api(url);
 		dynamic res_obj = JObject.Parse(res);
 		Console.WriteLine($"\nStory id: {res_obj.id}");
@@ -140,7 +166,6 @@ static class ADO {
 		string content = JsonConvert.SerializeObject(test_plan);
 		string raw_body = "{\"name\": \"" + test_plan.name + "\", \"areaPath\": \"" + test_plan.areaPath + "\"}";
 		dynamic res = await post_api(url, raw_body);
-		Console.WriteLine($"test plan res:\n{res}");
 		return res;
 	}
 	public static async Task<dynamic> create_test_suite(create_test_suite_dto suite, string plan_id, string root_id, String project_title) {
@@ -148,21 +173,20 @@ static class ADO {
 		string content = JsonConvert.SerializeObject(suite);
 		dynamic res = await post_api(url, content);
 		dynamic res_obj = JObject.Parse(res);
-		Console.WriteLine($"test suite res:\n{res}");
 		return res_obj;
 	}
-	public static async Task<dynamic> create_test_case(string project_title, string story_title, dynamic scenario, string area_path) {
+	public static async Task<dynamic> create_test_case(string project_title, string story_title, dynamic scenario, string area_path, string tag_list) {
 		string url = $"{base_url}{project_title}/_apis/wit/workitems/$Test%20Case?api-version=7.1";
 		string steps = steps_builder(0, scenario.steps);
 		steps = $"<steps id=\"0\" last=\"{((int)scenario.steps.Count + 1).ToString()}\">{steps}</steps>";
 		var title = new patch_json("add", "/fields/System.Title", $"{story_title}");
 		var area = new patch_json("add", "/fields/System.AreaPath", area_path);
+		/*var tags = new patch_json("add", "/fields/System.Tags", tag_list);*/
 		var test_steps = new patch_json("add", "/fields/Microsoft.VSTS.TCM.Steps", steps);
 		List<patch_json> patch = new List<patch_json>{title, area, test_steps};
 		string content = JsonConvert.SerializeObject(patch);
 		string res = await post_api_with_patch(url, content);
 		dynamic res_obj = JObject.Parse(res);
-		Console.WriteLine($"test case res:\n{res}");
 
 		return res_obj;
 	}
@@ -180,8 +204,18 @@ static class ADO {
 		return res;
 	}
 
+	public static async Task<dynamic> add_tags(dynamic item_id, string[] tags, string project_title){
+		Console.WriteLine($"tags to add: {tags}");
+		string url = $"{base_url}{project_title}/_apis/wit/workitems/{(string)item_id}?api-version=7.1";
+		var tag_c = new patch_json("add", "/fields/System.Tags", String.Join("; ", tags));
+		List<patch_json> patch = new List<patch_json>{tag_c};
+		string tag_content = JsonConvert.SerializeObject(patch);
+		string tag_res = await patch_api(url, tag_content);
+		return "done";
+	}
+
 	//workflow for creating tests: create test plan, create test suite for each feature, create test case for each valid story, link test case to suite
-	public static async Task<dynamic> create_tests(string epic_title, dynamic features, string project_title, string area) {
+	public static async Task<dynamic> create_tests(string epic_title, dynamic features, string project_title, string area, string[] tags) {
 	
 		//test plan
 		var new_area = new area_dto(area);
@@ -189,23 +223,36 @@ static class ADO {
 		dynamic test_plan_res = await create_test_plan(new_plan, project_title);
 		dynamic test_plan_obj = JObject.Parse(test_plan_res);
 
+
 		//test suite
 		foreach(var feat in features) {
 			var new_suite = new create_test_suite_dto((string)feat.feature_title, "StaticTestSuite",new_area);
 			dynamic suite_res = await create_test_suite(new_suite, (string)test_plan_obj.id, (string)test_plan_obj.rootSuite.id, project_title);
+			List<string[]> suite_tags = new List<string[]>();
 			foreach(var story in feat.stories) {
 				if (!(bool)story.invest_compliant){
 					continue;
 				}
 				//test case + link
 				foreach(var scenario in story.test_plan.scenarios){
-					dynamic case_res = await create_test_case(project_title, (string)story.title, scenario, area);
+					dynamic case_res = await create_test_case(project_title, (string)story.title, scenario, area, String.Join("; ", tags));
 					dynamic link_res = await link_test_suite((string)test_plan_obj.id, (string)suite_res.value[0].id, (int)case_res.id, project_title);
 
+					//get story details and add tags to test case
+					dynamic details = await get_story_details(project_title, (string)story.id);
+					string story_tags = JsonConvert.SerializeObject(details["fields"]["System.Tags"]);
+					await add_tags((string)story.id, story_tags.Split("; "), project_title);
+					suite_tags.Add(story_tags.Split("; "));
 				}
 			}
+			//add tags to suite
+			List<string> suite_tags_list = suite_tags.SelectMany(x => x).ToList();
+			string[] suite_tags_array = suite_tags_list.ToArray();
+			await add_tags((string)suite_res.value[0].id, suite_tags_array, project_title);
 		}
 
+		//add tags to plan
+		await add_tags(test_plan_obj.id, tags, project_title);
 		return "done";
 	}
 

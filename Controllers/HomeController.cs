@@ -17,11 +17,13 @@ public class HomeController : Controller
         return View();
     }
 
-    public async Task<IActionResult> Area(){
-	    string projects = await get_projects();
-	    /*string epics = await get_epics_by_area_project(project, area);*/
-	    /*return JsonConvert.SerializeObject(projects, Formatting.Indented);*/
-	    return Json(projects);
+    public async Task<IActionResult> Get_Areas(string project){
+	    try {
+		    string areas = await get_areas_by_project(project);
+		    return Json(areas);
+	    } catch (Exception e) {
+		    return Json("Error");
+	    }
 
 		
     }
@@ -71,12 +73,12 @@ public class HomeController : Controller
 		    //Get epic first
 		    dynamic epic = await get_epic_by_title(project, epic_title, area);
 		    Console.WriteLine($"epics response: \n{epic}");
-		    if (epic.workItems.Count < 1) {
+		    if (epic == null) {
 			    return "no epic found";
 		    }
 
 		    //Get features from epic
-		    dynamic features = await get_features_by_epic(project, epic.workItems[0].id.ToString());
+		    dynamic features = await get_features_by_epic(project, epic.id.ToString());
 		    Console.WriteLine($"features response: \n{features}");
 		    string features_string = JsonConvert.SerializeObject(features);
 		    if (features.value.Count < 1) {
@@ -96,7 +98,7 @@ public class HomeController : Controller
 		    //test
 		    List<dynamic> res = new List<dynamic>();
 		    foreach(var item in stories) {
-			    dynamic details = await get_story_details(project, item);
+			    dynamic details = await get_story_details(project, (string)item.WorkItemId);
 			    res.Add("{ \n\"id\": " + details.id + ",\n\"title\": \"" + details["fields"]["System.Title"] + "\",\n\"Description\": \"" + details["fields"]["System.Description"] + "\",\n\"AcceptanceCriteria\": \"" + details["fields"]["Microsoft.VSTS.Common.AcceptanceCriteria"] + "\"\n}");
 
 		    }
@@ -107,7 +109,7 @@ public class HomeController : Controller
 		    //send stories to be analyzed by agent
 		    dynamic analysis = await copilot_analyze(res, feature_stories_obj);
 		    dynamic analysis_obj = JObject.Parse(analysis);
-		    dynamic create_test_res = await create_tests((string)features.value[0].Title, analysis_obj.suites, project, area);
+		    dynamic create_test_res = await create_tests((string)features.value[0].Title, analysis_obj.suites, project, area, tag_list);
 		    return "success, stories in this epic: \n" + string.Join(", ", res) + "\n story analyzed: \n "  + res[0] + "\nagent response: \n" + analysis + "\ncreate_test_plan_res: \n" + create_test_res;
 
 

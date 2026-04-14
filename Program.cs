@@ -51,6 +51,10 @@ app.MapControllerRoute(
     pattern: "/projects",
     defaults: new {controller="Home", action="Get_Projects"});
 
+app.MapControllerRoute(
+    name: "fetch_areas",
+    pattern: "/areas/{project}",
+    defaults: new {controller="Home", action="Get_Areas"});
 
 
 app.Run();
