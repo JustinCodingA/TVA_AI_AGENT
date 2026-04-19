@@ -1,0 +1,345 @@
+@model TvaInvestValidator.Models.ViewModels.WorkItemCreateViewModel
+
+@{
+    ViewData["Title"] = "Create Work Item";
+    var overallScore = Model.InvestScore?.CalculateOverallScore() ?? 0;
+}
+
+<div class="max-w-6xl mx-auto">
+    <!-- Header -->
+    <div class="mb-4">
+        <h1 class="display-6 fw-bold">Create Work Item</h1>
+        <p class="text-muted">
+            Enter your user story, epic, or feature details. The AI Assistant will analyze it against INVEST criteria.
+        </p>
+    </div>
+
+    <div class="row g-4">
+        <!-- Input Form -->
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="card-title mb-1">Work Item Details</h5>
+                    <p class="text-muted mb-0 small">Fill in the information about your work item</p>
+                </div>
+                <div class="card-body">
+                    <form asp-action="Analyze" method="post" id="workItemForm">
+                        <div class="mb-3">
+                            <label asp-for="WorkItemType" class="form-label">Work Item Type *</label>
+                            <select asp-for="WorkItemType" class="form-select" id="workItemType">
+                                <option value="">Select type...</option>
+                                <option value="0">User Story</option>
+                                <option value="1">Epic</option>
+                                <option value="2">Feature</option>
+                            </select>
+                            <span asp-validation-for="WorkItemType" class="text-danger"></span>
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="Title" class="form-label">Title *</label>
+                            <input asp-for="Title" class="form-control" id="titleInput"
+                                   placeholder="As a [user], I want to [action] so that [benefit]" />
+                            <small class="form-text text-muted" id="titleHelp">
+                                Tip: Use the user story format for clarity
+                            </small>
+                            <span asp-validation-for="Title" class="text-danger"></span>
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="Description" class="form-label">Description *</label>
+                            <textarea asp-for="Description" class="form-control" rows="6"
+                                      placeholder="Provide detailed context, background, and requirements..."></textarea>
+                            <small class="form-text text-muted" id="charCount">
+                                @(Model.Description?.Length ?? 0) characters • Aim for clear, concise descriptions
+                            </small>
+                            <span asp-validation-for="Description" class="text-danger"></span>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="form-label mb-0">Acceptance Criteria</label>
+                                <button type="button" class="btn btn-outline-primary btn-sm" onclick="addCriteria()">
+                                    <i class="fas fa-plus me-1"></i> Add Criteria
+                                </button>
+                            </div>
+                            <div id="criteriaContainer">
+                                @for (int i = 0; i < (Model.AcceptanceCriteria?.Count ?? 1); i++)
+                                {
+                                    <div class="input-group mb-2 criteria-item">
+                                        <input type="text" name="AcceptanceCriteria[@i]"
+                                               value="@(Model.AcceptanceCriteria?[i])"
+                                               class="form-control" placeholder="Acceptance criteria @(i + 1)..." />
+                                        @if (i > 0 || (Model.AcceptanceCriteria?.Count ?? 1) > 1)
+                                        {
+                                            <button type="button" class="btn btn-outline-danger" onclick="removeCriteria(this)">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <small class="form-text text-muted">
+                                Define specific, measurable conditions for completion
+                            </small>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-lg w-100" id="analyzeBtn">
+                            <i class="fas fa-sparkles me-2"></i>
+                            Analyze with AI
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- INVEST Quick Reference -->
+        <div class="col-lg-4">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white">
+                    <h6 class="card-title mb-0">INVEST Criteria</h6>
+                </div>
+                <div class="card-body">
+                    @{
+                        var investItems = new[] {
+                            new { Letter = "I", Name = "Independent", Desc = "Self-contained work" },
+                            new { Letter = "N", Name = "Negotiable", Desc = "Flexible implementation" },
+                            new { Letter = "V", Name = "Valuable", Desc = "Clear business value" },
+                            new { Letter = "E", Name = "Estimable", Desc = "Can be sized" },
+                            new { Letter = "S", Name = "Small", Desc = "Fits in one sprint" },
+                            new { Letter = "T", Name = "Testable", Desc = "Clear success criteria" }
+                        };
+                    }
+                    @foreach (var item in investItems)
+                    {
+                        <div class="d-flex gap-2 mb-3">
+                            <div class="invest-letter-small bg-primary flex-shrink-0">@item.Letter</div>
+                            <div>
+                                <p class="mb-0 fw-medium small">@item.Name</p>
+                                <p class="mb-0 text-muted" style="font-size: 0.75rem;">@item.Desc</p>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="alert alert-info">
+                <i class="fas fa-lightbulb me-2"></i>
+                <strong>Writing Tips</strong>
+                <ul class="mb-0 mt-2 small">
+                    <li>Focus on the user's need, not the solution</li>
+                    <li>Keep it simple and focused</li>
+                    <li>Include clear acceptance criteria</li>
+                    <li>Avoid technical jargon</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analysis Results -->
+    @if (Model.ShowAnalysis && Model.InvestScore != null)
+    {
+        <div class="card shadow border-primary mt-4">
+            <div class="card-header bg-primary-subtle">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <h5 class="card-title mb-1">
+                            <i class="fas fa-sparkles text-primary me-2"></i>
+                            AI Analysis Results
+                        </h5>
+                        <p class="text-muted mb-0 small">INVEST criteria evaluation with suggestions</p>
+                    </div>
+                    <div class="text-center">
+                        <div class="display-5 fw-bold text-@Model.InvestScore.GetScoreColor(overallScore)">
+                            @overallScore%
+                        </div>
+                        <small class="text-muted">Overall Score</small>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <ul class="nav nav-tabs mb-4" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#overview">Overview</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#detailed">Detailed Analysis</button>
+                    </li>
+                </ul>
+
+                <div class="tab-content">
+                    <!-- Overview Tab -->
+                    <div class="tab-pane fade show active" id="overview">
+                        @{
+                            var criteria = new[] {
+                                new { Key = "Independent", Value = Model.InvestScore.Independent },
+                                new { Key = "Negotiable", Value = Model.InvestScore.Negotiable },
+                                new { Key = "Valuable", Value = Model.InvestScore.Valuable },
+                                new { Key = "Estimable", Value = Model.InvestScore.Estimable },
+                                new { Key = "Small", Value = Model.InvestScore.Small },
+                                new { Key = "Testable", Value = Model.InvestScore.Testable }
+                            };
+                        }
+                        @foreach (var criterion in criteria)
+                        {
+                            <div class="mb-4">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <i class="fas @(criterion.Value.Score >= 80 ? "fa-check-circle text-success" :
+                                                         criterion.Value.Score >= 60 ? "fa-exclamation-circle text-warning" :
+                                                         "fa-times-circle text-danger")"></i>
+                                        <span class="fw-medium">@criterion.Key</span>
+                                    </div>
+                                    <span class="fw-bold text-@Model.InvestScore.GetScoreColor(criterion.Value.Score)">
+                                        @criterion.Value.Score%
+                                    </span>
+                                </div>
+                                <div class="progress mb-2" style="height: 8px;">
+                                    <div class="progress-bar bg-@Model.InvestScore.GetScoreColor(criterion.Value.Score)"
+                                         style="width: @criterion.Value.Score%"></div>
+                                </div>
+                                <p class="text-muted small mb-0">@criterion.Value.Feedback</p>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Detailed Tab -->
+                    <div class="tab-pane fade" id="detailed">
+                        @foreach (var criterion in criteria)
+                        {
+                            var borderClass = criterion.Value.Score >= 80 ? "border-success" :
+                                            criterion.Value.Score >= 60 ? "border-warning" : "border-danger";
+                            <div class="card @borderClass mb-3">
+                                <div class="card-header">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <h6 class="mb-0">
+                                            <i class="fas @(criterion.Value.Score >= 80 ? "fa-check-circle text-success" :
+                                                             criterion.Value.Score >= 60 ? "fa-exclamation-circle text-warning" :
+                                                             "fa-times-circle text-danger") me-2"></i>
+                                            @criterion.Key
+                                        </h6>
+                                        <span class="badge bg-@Model.InvestScore.GetScoreColor(criterion.Value.Score)">
+                                            @criterion.Value.Score%
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <p class="fw-medium small mb-1">Analysis</p>
+                                        <p class="text-muted small mb-0">@criterion.Value.Feedback</p>
+                                    </div>
+
+                                    @if (criterion.Value.Suggestions.Any())
+                                    {
+                                        var bgClass = criterion.Value.Score >= 80 ? "bg-success-subtle" :
+                                                     criterion.Value.Score >= 60 ? "bg-warning-subtle" : "bg-danger-subtle";
+                                        <div class="@bgClass p-3 rounded">
+                                            <p class="fw-medium small mb-2">
+                                                <i class="fas fa-lightbulb me-2"></i>
+                                                Suggestions for Improvement
+                                            </p>
+                                            <ul class="mb-0 small">
+                                                @foreach (var suggestion in criterion.Value.Suggestions)
+                                                {
+                                                    <li class="text-muted">@suggestion</li>
+                                                }
+                                            </ul>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="d-flex gap-3 mt-4 pt-4 border-top">
+                    <button type="button" class="btn btn-outline-secondary flex-fill" onclick="window.location.reload()">
+                        Revise Work Item
+                    </button>
+                    <form asp-action="Submit" method="post" class="flex-fill">
+                        <input type="hidden" asp-for="WorkItemType" />
+                        <input type="hidden" asp-for="Title" />
+                        <input type="hidden" asp-for="Description" />
+                        @if (Model.AcceptanceCriteria != null)
+                        {
+                            @for (int i = 0; i < Model.AcceptanceCriteria.Count; i++)
+                            {
+                                <input type="hidden" name="AcceptanceCriteria[@i]" value="@Model.AcceptanceCriteria[i]" />
+                            }
+                        }
+                        <button type="submit" class="btn btn-primary w-100" disabled="@(overallScore < 70)">
+                            @if (overallScore >= 70)
+                            {
+                                <text>
+                                    Submit Work Item
+                                    <i class="fas fa-arrow-right ms-2"></i>
+                                </text>
+                            }
+                            else
+                            {
+                                <text>Score too low - Improve first</text>
+                            }
+                        </button>
+                    </form>
+                </div>
+
+                @if (overallScore < 70)
+                {
+                    <div class="alert alert-danger mt-3 mb-0">
+                        <i class="fas fa-exclamation-circle me-2"></i>
+                        <strong>Action Required</strong><br/>
+                        Your work item needs improvement before submission. Review the suggestions above and revise your work item to meet INVEST criteria.
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script>
+        let criteriaIndex = @(Model.AcceptanceCriteria?.Count ?? 1);
+
+        function addCriteria() {
+            const container = document.getElementById('criteriaContainer');
+            const div = document.createElement('div');
+            div.className = 'input-group mb-2 criteria-item';
+            div.innerHTML = `
+                <input type="text" name="AcceptanceCriteria[${criteriaIndex}]"
+                       class="form-control" placeholder="Acceptance criteria ${criteriaIndex + 1}..." />
+                <button type="button" class="btn btn-outline-danger" onclick="removeCriteria(this)">
+                    <i class="fas fa-trash"></i>
+                </button>
+            `;
+            container.appendChild(div);
+            criteriaIndex++;
+        }
+
+        function removeCriteria(btn) {
+            btn.closest('.criteria-item').remove();
+        }
+
+        // Character count
+        const descriptionField = document.querySelector('textarea[name="Description"]');
+        if (descriptionField) {
+            descriptionField.addEventListener('input', function() {
+                document.getElementById('charCount').textContent =
+                    `${this.value.length} characters • Aim for clear, concise descriptions`;
+            });
+        }
+
+        // Update placeholder based on work item type
+        const workItemType = document.getElementById('workItemType');
+        const titleInput = document.getElementById('titleInput');
+
+        if (workItemType && titleInput) {
+            workItemType.addEventListener('change', function() {
+                const placeholders = {
+                    '0': 'As a [user], I want to [action] so that [benefit]',
+                    '1': 'High-level initiative or goal',
+                    '2': 'Feature name'
+                };
+                titleInput.placeholder = placeholders[this.value] || 'Enter title...';
+            });
+        }
+    </script>
+}

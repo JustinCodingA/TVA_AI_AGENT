@@ -1,0 +1,243 @@
+@model TvaInvestValidator.Models.ViewModels.ProjectConfigViewModel
+
+@{
+    ViewData["Title"] = "Configure Project";
+    var allCompliant = Model.AnalysisResults?.All(r => r.Compliant) ?? false;
+    var compliantCount = Model.AnalysisResults?.Count(r => r.Compliant) ?? 0;
+}
+
+<div class="py-4">
+    <!-- Welcome Section -->
+    <div class="text-center mb-5 p-5 rounded-4 bg-white shadow-sm">
+        <h1 class="display-4 gradient-text fw-bold mb-3">
+            Welcome to Tennessee Valley Authority INVEST Criteria Validator
+        </h1>
+        <p class="lead text-muted mx-auto" style="max-width: 48rem;">
+            Create high-quality user stories, epics, and features with AI-powered guidance.
+            Our assistant ensures your work items meet INVEST criteria for better project outcomes.
+        </p>
+    </div>
+
+    <!-- Project Configuration -->
+    <div class="card shadow-sm mb-4 border-0">
+        <div class="card-header bg-transparent pb-0">
+            <h5 class="card-title mb-1">
+                <i class="fas fa-building me-2"></i>
+                Configure Your Work Item
+            </h5>
+            <p class="text-muted mb-0 small">Select your project details to get started</p>
+        </div>
+        <div class="card-body">
+            <form asp-action="Analyze" method="post">
+                <div class="mb-3">
+                    <label asp-for="SelectedProject" class="form-label">Project *</label>
+                    <select asp-for="SelectedProject" class="form-select" id="projectSelect">
+                        <option value="">Select a project...</option>
+                        @foreach (var project in Model.AvailableProjects)
+                        {
+                            <option value="@project">@project</option>
+                        }
+                    </select>
+                    <span asp-validation-for="SelectedProject" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="AreaPath" class="form-label">Area Path *</label>
+                    <input asp-for="AreaPath" class="form-control" placeholder="e.g., TVA\PowerGrid\Monitoring or Project\Team\Component" />
+                    <div class="form-text">Enter the area path where this work item should be organized</div>
+                    <span asp-validation-for="AreaPath" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="SelectedEpic" class="form-label">Epic *</label>
+                    <select asp-for="SelectedEpic" class="form-select" id="epicSelect" disabled>
+                        <option value="" disabled selected>Select project first</option>
+                    </select>
+                    <span asp-validation-for="SelectedEpic" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Tags" class="form-label">Tags</label>
+                    <input asp-for="Tags" class="form-control" placeholder="e.g., frontend, critical, security" />
+                    <div class="form-text">Optional: Add multiple tags separated by commas to help categorize this work item.</div>
+                </div>
+
+                <div class="alert alert-info">
+                    <i class="fas fa-lightbulb me-2"></i>
+                    <strong>Getting Started</strong><br/>
+                    Fill in all required fields (*) to analyze your work item configuration against INVEST criteria.
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-lg w-100">
+                    <i class="fas fa-sparkles me-2"></i>
+                    Analyze INVEST Compliance
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Analysis Results -->
+    @if (Model.AnalysisResults != null && Model.AnalysisResults.Any())
+    {
+        <div class="card shadow-sm mb-4 @(allCompliant ? "border-success" : "border-warning")">
+            <div class="card-header @(allCompliant ? "bg-success-subtle" : "bg-warning-subtle")">
+                <h5 class="card-title mb-1">
+                    <i class="fas @(allCompliant ? "fa-check-circle text-success" : "fa-exclamation-triangle text-warning") me-2"></i>
+                    AI Analysis Results
+                </h5>
+                <p class="text-muted mb-0 small">
+                    @if (allCompliant)
+                    {
+                        <text>All INVEST criteria are met! This work item is ready for development.</text>
+                    }
+                    else
+                    {
+                        <text>@compliantCount of 6 INVEST criteria met. Review the feedback below to improve your work item.</text>
+                    }
+                </p>
+            </div>
+            <div class="card-body">
+                @foreach (var criterion in Model.AnalysisResults)
+                {
+                    <div class="invest-criterion @(criterion.Compliant ? "compliant" : "not-compliant") mb-3">
+                        <div class="d-flex gap-3">
+                            <div class="invest-letter @(criterion.Compliant ? "bg-success" : "bg-danger")">
+                                @criterion.Letter
+                            </div>
+                            <div class="flex-fill">
+                                <div class="d-flex align-items-center gap-2 mb-2">
+                                    <h6 class="mb-0 fw-semibold">@criterion.Name</h6>
+                                    @if (criterion.Compliant)
+                                    {
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-check me-1"></i> Compliant
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-danger">
+                                            <i class="fas fa-times me-1"></i> Not Compliant
+                                        </span>
+                                    }
+                                </div>
+                                <p class="text-muted mb-0 small">@criterion.Comment</p>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <!-- INVEST Overview -->
+    <div class="card shadow-sm border-primary mb-4">
+        <div class="card-header bg-primary-subtle">
+            <h5 class="card-title mb-0">
+                <i class="fas fa-bullseye text-primary me-2"></i>
+                What is INVEST?
+            </h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-4">
+                INVEST is a set of criteria that helps create effective user stories. Our AI Assistant will evaluate your work items against these six principles:
+            </p>
+            <div class="row g-3">
+                @{
+                    var investItems = new[] {
+                        new { Letter = "I", Name = "Independent", Desc = "Can be developed separately" },
+                        new { Letter = "N", Name = "Negotiable", Desc = "Details can be discussed" },
+                        new { Letter = "V", Name = "Valuable", Desc = "Provides clear business value" },
+                        new { Letter = "E", Name = "Estimable", Desc = "Can be sized accurately" },
+                        new { Letter = "S", Name = "Small", Desc = "Fits within a sprint" },
+                        new { Letter = "T", Name = "Testable", Desc = "Has clear acceptance criteria" }
+                    };
+                }
+                @foreach (var item in investItems)
+                {
+                    <div class="col-md-6">
+                        <div class="d-flex gap-3 p-3 bg-white rounded shadow-sm">
+                            <div class="invest-letter-small bg-primary">@item.Letter</div>
+                            <div>
+                                <p class="mb-0 fw-medium small">@item.Name</p>
+                                <p class="mb-0 text-muted" style="font-size: 0.75rem;">@item.Desc</p>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Benefits -->
+    <div class="row g-4 mb-4">
+        @{
+            var benefits = new[] {
+                new { Icon = "fa-check-circle", Title = "Instant Feedback", Desc = "Get real-time AI analysis as you configure" },
+                new { Icon = "fa-lightbulb", Title = "Smart Suggestions", Desc = "Receive actionable improvement recommendations" },
+                new { Icon = "fa-bullseye", Title = "Quality Assurance", Desc = "Ensure all work items meet INVEST standards" }
+            };
+        }
+        @foreach (var benefit in benefits)
+        {
+            <div class="col-md-4">
+                <div class="card text-center h-100 shadow-sm">
+                    <div class="card-body">
+                        <i class="fas @benefit.Icon fa-3x text-primary mb-3"></i>
+                        <h6 class="fw-semibold mb-2">@benefit.Title</h6>
+                        <p class="text-muted small mb-0">@benefit.Desc</p>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            const projectEpics = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.ProjectEpics));
+            const projectSelect = document.getElementById('projectSelect');
+            const epicSelect = document.getElementById('epicSelect');
+
+            const updateEpicOptions = () => {
+                const selectedProject = projectSelect?.value || '';
+                epicSelect.innerHTML = '';
+
+                if (selectedProject && projectEpics[selectedProject]?.length > 0) {
+                    const placeholder = document.createElement('option');
+                    placeholder.value = '';
+                    placeholder.textContent = 'Select an epic...';
+                    placeholder.disabled = true;
+                    placeholder.selected = true;
+                    epicSelect.appendChild(placeholder);
+
+                    projectEpics[selectedProject].forEach(epic => {
+                        const option = document.createElement('option');
+                        option.value = epic;
+                        option.textContent = epic;
+                        epicSelect.appendChild(option);
+                    });
+                    epicSelect.disabled = false;
+                } else {
+                    const placeholder = document.createElement('option');
+                    placeholder.value = '';
+                    placeholder.textContent = selectedProject ? 'No epics found for this project' : 'Select project first';
+                    placeholder.disabled = true;
+                    placeholder.selected = true;
+                    epicSelect.appendChild(placeholder);
+                    epicSelect.disabled = true;
+                }
+            };
+
+            projectSelect?.addEventListener('change', updateEpicOptions);
+
+            if (projectSelect?.value) {
+                updateEpicOptions();
+                const selectedEpic = '@Model.SelectedEpic';
+                if (selectedEpic) {
+                    epicSelect.value = selectedEpic;
+                }
+            }
+        });
+    </script>
+}

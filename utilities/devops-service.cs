@@ -1,4 +1,3 @@
-/*using System.Net.Http.Json*/
 using System;
 using System.Net.Http;
 using System.Text;
@@ -7,16 +6,15 @@ using Newtonsoft.Json.Linq;
 using dotenv.net;
 using TVA_AI_AGENT.dto;
 
-namespace TVA_AI_AGENT.Service;
+namespace TvaInvestValidator.Services;
 
 
 static class ADO {
 
-	static string org = Environment.GetEnvironmentVariable("ORGANIZATION");
-	static string pat = Environment.GetEnvironmentVariable("PAT");
+	static string org = Environment.GetEnvironmentVariable("ORGANIZATION") ?? "";
+	static string pat = Environment.GetEnvironmentVariable("PAT") ?? "";
 	static string base_url = $"https://dev.azure.com/{org}/";
 	static string analytics_base_url = $"https://analytics.dev.azure.com/{org}";
-	static string url_params = "_apis/wit/wiql?api-version=7.0";
 
 	//used to make GET calls
 	public static async Task<dynamic> get_api(string url) {
