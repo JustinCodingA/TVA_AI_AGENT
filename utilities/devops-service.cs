@@ -251,7 +251,6 @@ static class ADO {
 					suite_tags.Add(story_tags.Split("; "));
 				}
 			}
-			//add tags to suite
 			List<string> suite_tags_list = suite_tags.SelectMany(x => x).ToList();
 			suite_tags_list = suite_tags_list.Distinct().ToList();
 			string[] suite_tags_array = suite_tags_list.Select(s => s.Trim('"')).ToArray();
@@ -259,7 +258,6 @@ static class ADO {
 			foreach(var tag in suite_tags_array) {
 				Console.WriteLine(tag);
 			}
-			await add_tags((string)suite_res.value[0].id, suite_tags_array, project_title);
 			foreach(var tag in suite_tags_array) {
 				if (!plan_tag_list.Contains(tag)) {
 					plan_tag_list.Add(tag);
