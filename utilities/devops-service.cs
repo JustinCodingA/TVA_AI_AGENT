@@ -2,9 +2,11 @@
 using System;
 using System.Net.Http;
 using System.Text;
+using System.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using dotenv.net;
+
 using TVA_AI_AGENT.dto;
 
 namespace TVA_AI_AGENT.Service;
@@ -132,6 +134,7 @@ static class ADO {
 		get_story_ids_query_pt1 = get_story_ids_query_pt1.TrimEnd(',');
 
 		dynamic res = await get_api($"{get_story_ids_query_pt1}{get_story_ids_query_pt2}");
+		Console.WriteLine($"debug story: \n{res}");
 
 		dynamic res_obj = JObject.Parse(res);
 
@@ -222,6 +225,7 @@ static class ADO {
 		var new_plan = new create_test_plan_dto(epic_title, new_area.name);
 		dynamic test_plan_res = await create_test_plan(new_plan, project_title);
 		dynamic test_plan_obj = JObject.Parse(test_plan_res);
+		List<string> plan_tag_list = new List<string>();
 
 
 		//test suite
@@ -241,18 +245,34 @@ static class ADO {
 					//get story details and add tags to test case
 					dynamic details = await get_story_details(project_title, (string)story.id);
 					string story_tags = JsonConvert.SerializeObject(details["fields"]["System.Tags"]);
-					await add_tags((string)story.id, story_tags.Split("; "), project_title);
+					Console.WriteLine($"DEBUG adding tags to case {(string)story.id}:\n{story_tags}");
+
+					if (story_tags != null) {await add_tags((string)case_res.id, story_tags.Split("; ").Select(s => s.Trim('"', '/', '\\')).ToArray(), project_title);}
 					suite_tags.Add(story_tags.Split("; "));
 				}
 			}
 			//add tags to suite
 			List<string> suite_tags_list = suite_tags.SelectMany(x => x).ToList();
-			string[] suite_tags_array = suite_tags_list.ToArray();
+			suite_tags_list = suite_tags_list.Distinct().ToList();
+			string[] suite_tags_array = suite_tags_list.Select(s => s.Trim('"')).ToArray();
+			Console.WriteLine($"DEBUG adding tags to suite {suite_res.value[0].id}:");
+			foreach(var tag in suite_tags_array) {
+				Console.WriteLine(tag);
+			}
 			await add_tags((string)suite_res.value[0].id, suite_tags_array, project_title);
+			foreach(var tag in suite_tags_array) {
+				if (!plan_tag_list.Contains(tag)) {
+					plan_tag_list.Add(tag);
+				}
+			}
 		}
 
 		//add tags to plan
-		await add_tags(test_plan_obj.id, tags, project_title);
+		Console.WriteLine($"DEBUG adding tags to plan {test_plan_obj.id}:");
+		foreach(var tag in plan_tag_list) {
+			Console.WriteLine(tag);
+		}
+		await add_tags(test_plan_obj.id, plan_tag_list.ToArray(), project_title);
 		return "done";
 	}
 

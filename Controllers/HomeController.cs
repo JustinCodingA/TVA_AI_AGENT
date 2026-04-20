@@ -98,7 +98,7 @@ public class HomeController : Controller
 		    //test
 		    List<dynamic> res = new List<dynamic>();
 		    foreach(var item in stories) {
-			    dynamic details = await get_story_details(project, item);
+			    dynamic details = await get_story_details(project, (string)item.WorkItemId);
 
 				//Tag filtering - if tags were passed, only add stories that have a matching tag
 				if (tag_list.Length > 0) {
